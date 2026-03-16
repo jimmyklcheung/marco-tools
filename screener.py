@@ -62,11 +62,20 @@ from return_percentile import run_analysis, TODAY_STR, PTILE_BAND
 # ── 1. SCREEN CONFIGURATION ───────────────────────────────────────────────────
 
 SCREEN = {
-    "momentum_ptile_min": 65,    # avg %tile must be ≥ this to qualify as MOMENTUM
-    "reversal_ptile_max": 35,    # avg %tile must be ≤ this to qualify as REVERSAL
-    "min_hit_rate":       54.0,  # avg hit rate must exceed this (edge > coin flip)
-    "min_n_obs":          25,    # minimum analogue observations (worst lookback)
-    "early_slope_thresh": 20,    # |ptile_2w − ptile_12w| > this = "early/fading"
+    "momentum_ptile_min":  65,   # avg %tile must be ≥ this → MOMENTUM or FADE zone
+    "reversal_ptile_max":  35,   # avg %tile must be ≤ this → REVERSAL or BREAKDOWN zone
+    "min_hit_rate_long":   54.0, # hit rate must be ABOVE this for a LONG signal
+    "max_hit_rate_short":  46.0, # hit rate must be BELOW this for a SHORT signal
+    "min_n_obs":           25,   # minimum analogue observations (worst lookback)
+    "early_slope_thresh":  20,   # |ptile_2w − ptile_12w| > this = confirmed direction
+}
+
+# Signal colours  (LONG = cool, SHORT = warm)
+SIG_COLORS = {
+    "MOMENTUM":  "#2ca02c",   # green  — LONG, chase strength
+    "REVERSAL":  "#1f77b4",   # blue   — LONG, buy the dip
+    "FADE":      "#ff7f0e",   # orange — SHORT, fade the exhausted rally
+    "BREAKDOWN": "#d62728",   # red    — SHORT, don't catch the falling knife
 }
 
 # ── Email ─────────────────────────────────────────────────────────────────────
@@ -98,14 +107,27 @@ def build_screen(all_results: dict) -> pd.DataFrame:
     --------------------
     avg_ptile      : mean of 2w/4w/8w/12w current percentiles
     slope          : ptile_2w − ptile_12w
-                       > 0  → recent momentum building (early chase signal)
-                       < 0  → recent momentum fading  (early reversal signal)
+                       > 0  → momentum building  (favours MOMENTUM chase)
+                       < 0  → momentum fading    (favours FADE / BREAKDOWN short)
     avg_hit_rate   : mean hit rate across all 12 (lookback × forward) cells
     avg_med_fwd_4w : mean median 4w forward return across all lookbacks
     min_n_obs      : minimum N obs (worst-case confidence)
-    signal         : MOMENTUM | REVERSAL | NEUTRAL
-    conviction     : composite score used to rank within each signal bucket
-    slope_arrow    : ↑↑ / ↑ / → / ↓ / ↓↓  for display
+
+    Signal matrix (2D: level × direction of historical edge)
+    ---------------------------------------------------------
+              | hit_rate > min_hit_rate_long | hit_rate < max_hit_rate_short
+    ----------|------------------------------|------------------------------
+    ptile ≥65 | MOMENTUM  (LONG: chase)      | FADE      (SHORT: fade rally)
+    ptile ≤35 | REVERSAL  (LONG: buy dip)    | BREAKDOWN (SHORT: avoid dip)
+    other     | NEUTRAL                      | NEUTRAL
+
+    Slope refines timing within each signal:
+      MOMENTUM  + slope ↑↑ = early chase (best entry, momentum still building)
+      FADE      + slope ↓↓ = early fade  (best entry, strength just turning)
+      REVERSAL  + slope ↓↓ = ripe reversal (momentum bottoming)
+      BREAKDOWN + slope ↓↓ = active breakdown (keep short)
+
+    conviction : comparable across LONG and SHORT — both use distance from 50%
     """
     rows = []
 
@@ -155,45 +177,62 @@ def build_screen(all_results: dict) -> pd.DataFrame:
 
             # ── Signal classification ─────────────────────────────────────────
             enough = (not np.isnan(avg_hr)) and (min_n >= SCREEN["min_n_obs"])
+            hi_ptile = avg_ptile >= SCREEN["momentum_ptile_min"]
+            lo_ptile = avg_ptile <= SCREEN["reversal_ptile_max"]
+            long_edge  = avg_hr >= SCREEN["min_hit_rate_long"]
+            short_edge = avg_hr <= SCREEN["max_hit_rate_short"]
 
-            if enough and avg_ptile >= SCREEN["momentum_ptile_min"] \
-                      and avg_hr    >= SCREEN["min_hit_rate"]:
-                signal = "MOMENTUM"
-            elif enough and avg_ptile <= SCREEN["reversal_ptile_max"] \
-                        and avg_hr    >= SCREEN["min_hit_rate"]:
-                signal = "REVERSAL"
-            else:
-                signal = "NEUTRAL"
+            if   enough and hi_ptile and long_edge:   signal = "MOMENTUM"
+            elif enough and lo_ptile and long_edge:   signal = "REVERSAL"
+            elif enough and hi_ptile and short_edge:  signal = "FADE"
+            elif enough and lo_ptile and short_edge:  signal = "BREAKDOWN"
+            else:                                     signal = "NEUTRAL"
 
             # ── Conviction score ──────────────────────────────────────────────
-            # Components (all bounded to prevent outliers dominating):
-            #   edge     = avg hit rate above 50 (max ~20 pts)
-            #   ret      = expected 4w return, capped at 3% (max ~15 pts)
-            #   depth    = log of analogue count (sample reliability)
-            #   timing   = bonus if slope confirms an "early" entry
-            if signal in ("MOMENTUM", "REVERSAL"):
-                edge   = max(0.0, avg_hr - 50.0) * 2.0
-                ret    = min(abs(avg_fwd4w) if not np.isnan(avg_fwd4w) else 0.0,
-                             3.0) * 5.0
-                depth  = np.log1p(min_n) * 2.0
-                # "Early" momentum: slope confirms direction
-                early_thresh = SCREEN["early_slope_thresh"]
-                early = ((signal == "MOMENTUM" and not np.isnan(slope)
-                          and slope > early_thresh) or
-                         (signal == "REVERSAL"  and not np.isnan(slope)
-                          and slope < -early_thresh))
-                timing = 10.0 if early else 0.0
+            # Same formula for LONG and SHORT — both measure distance from 50%.
+            # This makes conviction scores comparable across all 4 signal types.
+            #
+            #   edge   = |avg_hit_rate − 50| × 2   (0–20 pts; symmetrical)
+            #   ret    = min(|avg_fwd4w|, 3%) × 5   (0–15 pts; magnitude only)
+            #   depth  = log(min_n_obs + 1) × 2     (sample reliability)
+            #   timing = 10 if slope confirms signal direction (early-entry bonus)
+            #
+            # Timing bonus:
+            #   MOMENTUM  + slope > +thresh  → momentum still building (early chase)
+            #   REVERSAL  + slope < −thresh  → still falling but about to turn (ripe)
+            #   FADE      + slope < 0        → strength just starting to fade (early)
+            #   BREAKDOWN + slope < −thresh  → actively breaking (keep short)
+            early_thresh = SCREEN["early_slope_thresh"]
+            sl = slope if not np.isnan(slope) else 0.0
+
+            if signal != "NEUTRAL":
+                edge  = abs(avg_hr - 50.0) * 2.0
+                ret   = min(abs(avg_fwd4w) if not np.isnan(avg_fwd4w) else 0.0,
+                            3.0) * 5.0
+                depth = np.log1p(min_n) * 2.0
+
+                timing = 10.0 if (
+                    (signal == "MOMENTUM"  and sl >  early_thresh) or
+                    (signal == "REVERSAL"  and sl < -early_thresh) or
+                    (signal == "FADE"      and sl <  0)            or
+                    (signal == "BREAKDOWN" and sl < -early_thresh)
+                ) else 0.0
+
                 conviction = round(edge + ret + depth + timing, 1)
             else:
                 conviction = 0.0
 
-            # ── Slope arrow ───────────────────────────────────────────────────
-            if   np.isnan(slope):    arr = "—"
-            elif slope >  25:        arr = "↑↑ building"
-            elif slope >  10:        arr = "↑"
-            elif slope > -10:        arr = "→ confirmed"
-            elif slope > -25:        arr = "↓"
-            else:                    arr = "↓↓ fading"
+            # ── Slope arrow  (same arrow, interpreted per signal context) ─────
+            #   MOMENTUM:  ↑↑ = best entry  |  ↓↓ = late / at risk of turning
+            #   REVERSAL:  ↓↓ = ripe        |  ↑↑ = may be recovering already
+            #   FADE:      ↓↓ = best entry  |  ↑↑ = premature, still overbought
+            #   BREAKDOWN: ↓↓ = best entry  |  ↑↑ = dangerous, may be bouncing
+            if   np.isnan(slope):  arr = "—"
+            elif slope >  25:      arr = "↑↑ building"
+            elif slope >  10:      arr = "↑"
+            elif slope > -10:      arr = "→ confirmed"
+            elif slope > -25:      arr = "↓"
+            else:                  arr = "↓↓ fading"
 
             rows.append({
                 "Asset Class":    ac_label,
@@ -222,46 +261,53 @@ def build_screen(all_results: dict) -> pd.DataFrame:
 # ── 3. CONSOLE PRINT ──────────────────────────────────────────────────────────
 
 def print_screen(df: pd.DataFrame):
-    """Print the two ranked tables to stdout."""
+    """Print all four ranked signal tables to stdout."""
     pd.set_option("display.float_format", "{:.1f}".format)
     pd.set_option("display.max_colwidth", 20)
 
     date_str = datetime.today().strftime("%d %b %Y")
-    sep = "═" * 110
+    sep = "═" * 115
 
     print(f"\n{sep}")
-    print(f"  WEEKLY TRADING SCREEN  |  {date_str}  |  "
-          f"Analogue band ±{PTILE_BAND}%tile")
-    print(f"  Hit-rate threshold: >{SCREEN['min_hit_rate']}%  |  "
+    print(f"  WEEKLY TRADING SCREEN  |  {date_str}  |  Analogue band ±{PTILE_BAND}%tile")
+    print(f"  LONG edge: hit-rate >{SCREEN['min_hit_rate_long']}%  |  "
+          f"SHORT edge: hit-rate <{SCREEN['max_hit_rate_short']}%  |  "
           f"Min analogues: {SCREEN['min_n_obs']}  |  "
-          f"Momentum ≥{SCREEN['momentum_ptile_min']}%tile  |  "
-          f"Reversal ≤{SCREEN['reversal_ptile_max']}%tile")
+          f"Momentum/Fade zone: %tile ≥{SCREEN['momentum_ptile_min']}  |  "
+          f"Reversal/Breakdown zone: %tile ≤{SCREEN['reversal_ptile_max']}")
     print(sep)
 
     display_cols = ["Asset Class", "Instrument", "Avg %tile",
                     "Slope (2w−12w)", "Momentum",
                     "Avg Hit Rate", "Avg Fwd 4w (%)", "Min N obs", "Conviction"]
 
-    for signal, label, color_note in [
-        ("MOMENTUM", "TOP MOMENTUM CHASE SIGNALS", "high %tile + strong hit rate → chase continuation"),
-        ("REVERSAL", "TOP REVERSAL CANDIDATES",    "low %tile  + strong hit rate → bet on mean reversion"),
-    ]:
+    sections = [
+        # signal      direction  label                        description
+        ("MOMENTUM",  "LONG",  "TOP MOMENTUM CHASE",
+         "high %tile + hit>54% → LONG, chase continuation"),
+        ("REVERSAL",  "LONG",  "TOP REVERSAL CANDIDATES",
+         "low %tile  + hit>54% → LONG, buy the dip (history tilts to bounce)"),
+        ("FADE",      "SHORT", "TOP FADE CANDIDATES",
+         "high %tile + hit<46% → SHORT, fade exhausted rally (history tilts lower)"),
+        ("BREAKDOWN", "SHORT", "TOP BREAKDOWN CANDIDATES",
+         "low %tile  + hit<46% → SHORT, don't catch knife (history tilts lower still)"),
+    ]
+
+    for signal, direction, label, desc in sections:
         subset = df[df["Signal"] == signal].copy()
-        print(f"\n  ── {label} ({color_note}) ──")
+        bar = "▲ LONG" if direction == "LONG" else "▼ SHORT"
+        print(f"\n  ── {bar}  {label}  ({desc}) ──")
         if subset.empty:
             print("     (none qualify at current thresholds)")
-            continue
-        print(subset[display_cols].to_string(index=False))
+        else:
+            print(subset[display_cols].to_string(index=False))
 
-    neutral_count = (df["Signal"] == "NEUTRAL").sum()
-    total         = len(df)
-    momentum_count = (df["Signal"] == "MOMENTUM").sum()
-    reversal_count = (df["Signal"] == "REVERSAL").sum()
-
-    print(f"\n  Summary: {total} instruments  |  "
-          f"{momentum_count} MOMENTUM  |  "
-          f"{reversal_count} REVERSAL  |  "
-          f"{neutral_count} NEUTRAL")
+    counts = {s: (df["Signal"] == s).sum() for s in
+              ["MOMENTUM", "REVERSAL", "FADE", "BREAKDOWN", "NEUTRAL"]}
+    print(f"\n  Summary: {len(df)} instruments  |  "
+          f"▲ LONG: {counts['MOMENTUM']} MOMENTUM + {counts['REVERSAL']} REVERSAL  |  "
+          f"▼ SHORT: {counts['FADE']} FADE + {counts['BREAKDOWN']} BREAKDOWN  |  "
+          f"— {counts['NEUTRAL']} NEUTRAL")
     print(sep)
 
 
@@ -286,9 +332,10 @@ def make_screen_charts(df: pd.DataFrame, save_path: str = None) -> str:
     if save_path is None:
         save_path = f"screen_{TODAY_STR}.png"
 
-    # Only show instruments with a real signal in Panel B
-    signals = df[df["Signal"].isin(["MOMENTUM", "REVERSAL"])].copy()
-    signals.sort_values("Conviction", ascending=True, inplace=True)
+    # Panel B shows all 4 signal types, grouped LONG then SHORT
+    long_sigs  = df[df["Signal"].isin(["MOMENTUM", "REVERSAL"])].sort_values("Conviction")
+    short_sigs = df[df["Signal"].isin(["FADE", "BREAKDOWN"])].sort_values("Conviction")
+    signals = pd.concat([short_sigs, long_sigs], ignore_index=True)  # SHORT bottom, LONG top
 
     n_signals = len(signals)
     fig_height = max(10, 4 + n_signals * 0.32)
@@ -296,13 +343,14 @@ def make_screen_charts(df: pd.DataFrame, save_path: str = None) -> str:
     fig.patch.set_facecolor("#f0f0f0")
 
     date_str = datetime.today().strftime("%d %b %Y")
+    n_long  = len(long_sigs)
+    n_short = len(short_sigs)
     fig.suptitle(
-        f"Weekly Trading Screen  |  {date_str}  |  "
-        f"Analogue band ±{PTILE_BAND}%tile  |  "
-        f"Thresholds: momentum ≥{SCREEN['momentum_ptile_min']}  "
-        f"reversal ≤{SCREEN['reversal_ptile_max']}  "
-        f"hit rate >{SCREEN['min_hit_rate']}%",
-        fontsize=12, fontweight="bold", y=0.99,
+        f"Weekly Trading Screen  |  {date_str}  |  Analogue band ±{PTILE_BAND}%tile  |  "
+        f"LONG: %tile≥{SCREEN['momentum_ptile_min']} or ≤{SCREEN['reversal_ptile_max']} + hit>{SCREEN['min_hit_rate_long']}%  "
+        f"SHORT: same %tile zones + hit<{SCREEN['max_hit_rate_short']}%  |  "
+        f"▲{n_long} long  ▼{n_short} short",
+        fontsize=11, fontweight="bold", y=0.99,
     )
 
     gs = gridspec.GridSpec(1, 2, figure=fig, wspace=0.35,
@@ -312,27 +360,44 @@ def make_screen_charts(df: pd.DataFrame, save_path: str = None) -> str:
     ax_a = fig.add_subplot(gs[0, 0])
     ax_a.set_facecolor("#fafafa")
 
-    # Shaded quadrant zones
-    rev_max  = SCREEN["reversal_ptile_max"]
-    mom_min  = SCREEN["momentum_ptile_min"]
-    hr_min   = SCREEN["min_hit_rate"]
+    # Shaded quadrant zones — 4 active zones + 2 neutral bands
+    rev_max    = SCREEN["reversal_ptile_max"]
+    mom_min    = SCREEN["momentum_ptile_min"]
+    hr_long    = SCREEN["min_hit_rate_long"]
+    hr_short   = SCREEN["max_hit_rate_short"]
 
-    ax_a.axhspan(hr_min, 100, xmin=0,
-                 xmax=rev_max / 100,
-                 facecolor="#ffe0e0", alpha=0.45, zorder=0)
-    ax_a.axhspan(hr_min, 100, xmin=mom_min / 100,
-                 xmax=1.0,
-                 facecolor="#e0ffe0", alpha=0.45, zorder=0)
-    ax_a.axvline(rev_max, color="#cc4444", lw=1.0, ls="--", alpha=0.6)
-    ax_a.axvline(mom_min, color="#228822", lw=1.0, ls="--", alpha=0.6)
-    ax_a.axhline(hr_min,  color="#888888", lw=1.0, ls="--", alpha=0.6)
+    # LONG zones (top band: hit_rate > hr_long)
+    ax_a.axhspan(hr_long, 82, xmin=0,           xmax=rev_max / 100,
+                 facecolor="#cce5ff", alpha=0.45, zorder=0)   # REVERSAL — blue tint
+    ax_a.axhspan(hr_long, 82, xmin=mom_min / 100, xmax=1.0,
+                 facecolor="#d4edda", alpha=0.45, zorder=0)   # MOMENTUM — green tint
 
-    ax_a.text(rev_max / 2, 98, "REVERSAL\nZONE",
-              ha="center", va="top", fontsize=8, color="#993333",
-              fontweight="bold", alpha=0.7)
-    ax_a.text((mom_min + 100) / 2, 98, "MOMENTUM\nZONE",
-              ha="center", va="top", fontsize=8, color="#226622",
-              fontweight="bold", alpha=0.7)
+    # SHORT zones (bottom band: hit_rate < hr_short)
+    ax_a.axhspan(28, hr_short, xmin=0,           xmax=rev_max / 100,
+                 facecolor="#f8d7da", alpha=0.50, zorder=0)   # BREAKDOWN — red tint
+    ax_a.axhspan(28, hr_short, xmin=mom_min / 100, xmax=1.0,
+                 facecolor="#ffe8c0", alpha=0.50, zorder=0)   # FADE — orange tint
+
+    # Threshold lines
+    ax_a.axvline(rev_max,  color="#444444", lw=1.0, ls="--", alpha=0.5)
+    ax_a.axvline(mom_min,  color="#444444", lw=1.0, ls="--", alpha=0.5)
+    ax_a.axhline(hr_long,  color="#1f77b4", lw=1.0, ls="--", alpha=0.6)
+    ax_a.axhline(hr_short, color="#d62728", lw=1.0, ls="--", alpha=0.6)
+    ax_a.axhline(50,       color="#888888", lw=0.6, ls=":",  alpha=0.4)  # coin-flip
+
+    # Zone labels
+    ax_a.text(rev_max / 2,        80, "REVERSAL\n▲ LONG",
+              ha="center", va="top", fontsize=7.5, color="#1f77b4",
+              fontweight="bold", alpha=0.85)
+    ax_a.text((mom_min + 100) / 2, 80, "MOMENTUM\n▲ LONG",
+              ha="center", va="top", fontsize=7.5, color="#2ca02c",
+              fontweight="bold", alpha=0.85)
+    ax_a.text(rev_max / 2,        30, "BREAKDOWN\n▼ SHORT",
+              ha="center", va="bottom", fontsize=7.5, color="#d62728",
+              fontweight="bold", alpha=0.85)
+    ax_a.text((mom_min + 100) / 2, 30, "FADE\n▼ SHORT",
+              ha="center", va="bottom", fontsize=7.5, color="#ff7f0e",
+              fontweight="bold", alpha=0.85)
 
     valid = df.dropna(subset=["Avg %tile", "Avg Hit Rate"])
     for ac_label, group in valid.groupby("Asset Class"):
@@ -362,10 +427,10 @@ def make_screen_charts(df: pd.DataFrame, save_path: str = None) -> str:
                 loc="lower center", ncol=3, framealpha=0.85)
 
     ax_a.set_xlim(0, 100)
-    ax_a.set_ylim(35, 80)
+    ax_a.set_ylim(28, 82)
     ax_a.set_xlabel("Avg Return Percentile  (avg of 2w/4w/8w/12w lookbacks)", fontsize=9)
     ax_a.set_ylabel("Avg Hit Rate  (% of analogues with +ve fwd return)", fontsize=9)
-    ax_a.set_title("Opportunity Map — all instruments", fontsize=10, pad=8)
+    ax_a.set_title("Opportunity Map — 4-quadrant signal framework", fontsize=10, pad=8)
     ax_a.grid(True, alpha=0.3, lw=0.5)
 
     # ── Panel B: Conviction Ranking Bars ─────────────────────────────────────
@@ -376,12 +441,11 @@ def make_screen_charts(df: pd.DataFrame, save_path: str = None) -> str:
         ax_b.text(0.5, 0.5, "No signals qualify at current thresholds",
                   ha="center", va="center", fontsize=11, transform=ax_b.transAxes)
     else:
-        y_pos    = range(n_signals)
-        colors   = ["#2ca02c" if s == "MOMENTUM" else "#d62728"
-                    for s in signals["Signal"]]
+        y_pos  = range(n_signals)
+        colors = [SIG_COLORS.get(s, "#999999") for s in signals["Signal"]]
 
         bars = ax_b.barh(list(y_pos), signals["Conviction"], color=colors,
-                         alpha=0.80, edgecolor="white", linewidth=0.5)
+                         alpha=0.82, edgecolor="white", linewidth=0.5)
 
         # Instrument labels (left side)
         ax_b.set_yticks(list(y_pos))
@@ -391,7 +455,7 @@ def make_screen_charts(df: pd.DataFrame, save_path: str = None) -> str:
             fontsize=7.5,
         )
 
-        # Annotate bars: show avg %tile / hit rate / fwd return
+        # Annotate bars: %tile, hit rate, expected return, slope
         for bar, (_, row) in zip(bars, signals.iterrows()):
             w    = bar.get_width()
             ptxt = (f"  %tile {row['Avg %tile']:.0f}  |  "
@@ -403,30 +467,32 @@ def make_screen_charts(df: pd.DataFrame, save_path: str = None) -> str:
                       ptxt, va="center", ha="left", fontsize=6.5,
                       color="#333333")
 
-        # Divider line between REVERSAL and MOMENTUM groups
-        rev_idxs = [i for i, s in enumerate(signals["Signal"]) if s == "REVERSAL"]
-        mom_idxs = [i for i, s in enumerate(signals["Signal"]) if s == "MOMENTUM"]
-        if rev_idxs and mom_idxs:
-            boundary = (max(rev_idxs) + min(mom_idxs)) / 2
-            ax_b.axhline(boundary, color="#888888", lw=1.5, ls="--")
+        # Group index sets
+        sig_idxs = {s: [i for i, sig in enumerate(signals["Signal"]) if sig == s]
+                    for s in ["MOMENTUM", "REVERSAL", "FADE", "BREAKDOWN"]}
 
-        # Signal type labels on the bars themselves (group header)
-        if mom_idxs:
-            mid_mom = np.mean(mom_idxs)
-            ax_b.text(-0.5, mid_mom, "MOMENTUM\nCHASE",
-                      ha="right", va="center", fontsize=8,
-                      color="#2ca02c", fontweight="bold",
-                      transform=ax_b.get_yaxis_transform())
-        if rev_idxs:
-            mid_rev = np.mean(rev_idxs)
-            ax_b.text(-0.5, mid_rev, "REVERSAL\nCANDIDATE",
-                      ha="right", va="center", fontsize=8,
-                      color="#d62728", fontweight="bold",
-                      transform=ax_b.get_yaxis_transform())
+        # Divider between LONG (top) and SHORT (bottom) sections
+        long_all  = sig_idxs["MOMENTUM"] + sig_idxs["REVERSAL"]
+        short_all = sig_idxs["FADE"]     + sig_idxs["BREAKDOWN"]
+        if long_all and short_all:
+            boundary = (max(short_all) + min(long_all)) / 2
+            ax_b.axhline(boundary, color="#444444", lw=2.0, ls="-", alpha=0.4)
 
-        max_conv = signals["Conviction"].max()
-        ax_b.set_xlim(0, max_conv * 1.9)  # leave room for annotations
-        ax_b.set_xlabel("Conviction Score", fontsize=9)
+        # Group labels
+        for sig, label in [("MOMENTUM",  "▲ MOMENTUM\nCHASE"),
+                            ("REVERSAL",  "▲ REVERSAL\nCANDIDATE"),
+                            ("FADE",      "▼ FADE\nSHORT"),
+                            ("BREAKDOWN", "▼ BREAKDOWN\nSHORT")]:
+            idxs = sig_idxs[sig]
+            if idxs:
+                ax_b.text(-0.5, np.mean(idxs), label,
+                          ha="right", va="center", fontsize=7.5,
+                          color=SIG_COLORS[sig], fontweight="bold",
+                          transform=ax_b.get_yaxis_transform())
+
+        max_conv = signals["Conviction"].max() if n_signals else 1
+        ax_b.set_xlim(0, max_conv * 1.9)
+        ax_b.set_xlabel("Conviction Score  (edge × return magnitude × sample depth × timing)", fontsize=9)
 
     ax_b.set_title(
         f"Signal Ranking  ({n_signals} actionable signals)  "
@@ -457,8 +523,14 @@ def _html_table(subset: pd.DataFrame, signal: str) -> str:
     if subset.empty:
         return "<p><i>No instruments qualify at current thresholds.</i></p>"
 
-    header_bg  = "#1a5c1a" if signal == "MOMENTUM" else "#7a1a1a"
-    row_colors = ("#e8f5e9", "#ffffff") if signal == "MOMENTUM" else ("#fdecea", "#ffffff")
+    styles = {
+        "MOMENTUM":  ("#1a5c1a", "#e8f5e9"),   # dark green header, light green rows
+        "REVERSAL":  ("#1a3a6c", "#e8f0fe"),   # dark blue header, light blue rows
+        "FADE":      ("#7a3c00", "#fff3e0"),   # dark orange header, light orange rows
+        "BREAKDOWN": ("#7a1a1a", "#fdecea"),   # dark red header, light red rows
+    }
+    header_bg, row_alt = styles.get(signal, ("#333333", "#f5f5f5"))
+    row_colors = (row_alt, "#ffffff")
 
     cols = ["Instrument", "Asset Class", "Avg %tile", "Slope (2w−12w)",
             "Momentum", "Avg Hit Rate", "Avg Fwd 4w (%)", "Min N obs", "Conviction"]
@@ -507,15 +579,15 @@ def _html_table(subset: pd.DataFrame, signal: str) -> str:
 
 
 def build_html_report(df: pd.DataFrame, chart_path: str) -> str:
-    """Build the full HTML email body with embedded chart + ranked tables."""
+    """Build the full HTML email body with embedded chart + 4 ranked tables."""
     date_str = datetime.today().strftime("%A %d %b %Y")
 
-    momentum = df[df["Signal"] == "MOMENTUM"].copy()
-    reversal = df[df["Signal"] == "REVERSAL"].copy()
+    momentum  = df[df["Signal"] == "MOMENTUM"].copy()
+    reversal  = df[df["Signal"] == "REVERSAL"].copy()
+    fade      = df[df["Signal"] == "FADE"].copy()
+    breakdown = df[df["Signal"] == "BREAKDOWN"].copy()
 
-    momentum_count = len(momentum)
-    reversal_count = len(reversal)
-    total          = len(df)
+    total = len(df)
 
     # Embed chart as base64 inline image
     try:
@@ -534,18 +606,21 @@ def build_html_report(df: pd.DataFrame, chart_path: str) -> str:
     <head>
       <meta charset="utf-8"/>
       <style>
-        body {{ font-family: Arial, sans-serif; color: #222; background: #fff;
-                max-width: 1000px; margin: auto; padding: 20px; }}
-        h1   {{ font-size: 18px; color: #1a1a1a; }}
-        h2   {{ font-size: 14px; margin-top: 24px; padding: 6px 10px;
-                border-radius: 3px; }}
-        .momentum-h  {{ background: #1a5c1a; color: #fff; }}
-        .reversal-h  {{ background: #7a1a1a; color: #fff; }}
-        .summary     {{ background: #f4f4f4; padding: 10px 14px;
-                        border-left: 4px solid #555; margin-bottom: 16px;
-                        font-size: 12px; }}
-        .footer      {{ font-size: 10px; color: #777; margin-top: 30px;
-                        border-top: 1px solid #ddd; padding-top: 10px; }}
+        body  {{ font-family: Arial, sans-serif; color: #222; background: #fff;
+                 max-width: 1050px; margin: auto; padding: 20px; }}
+        h1    {{ font-size: 18px; color: #1a1a1a; }}
+        h2    {{ font-size: 13px; margin-top: 22px; padding: 6px 10px;
+                 border-radius: 3px; color: #fff; }}
+        .h-momentum  {{ background: #1a5c1a; }}
+        .h-reversal  {{ background: #1a3a6c; }}
+        .h-fade      {{ background: #7a3c00; }}
+        .h-breakdown {{ background: #7a1a1a; }}
+        .summary  {{ background: #f4f4f4; padding: 10px 14px;
+                     border-left: 4px solid #555; margin-bottom: 14px;
+                     font-size: 12px; line-height: 1.7; }}
+        .section-label {{ font-size: 11px; color: #555; margin-bottom: 4px; }}
+        .footer   {{ font-size: 10px; color: #777; margin-top: 30px;
+                     border-top: 1px solid #ddd; padding-top: 10px; }}
       </style>
     </head>
     <body>
@@ -553,39 +628,61 @@ def build_html_report(df: pd.DataFrame, chart_path: str) -> str:
 
       <div class="summary">
         <b>Universe:</b> {total} instruments &nbsp;|&nbsp;
-        <b>Analogue band:</b> &plusmn;{PTILE_BAND} %tile &nbsp;|&nbsp;
-        <b>Momentum signals:</b> {momentum_count} &nbsp;|&nbsp;
-        <b>Reversal signals:</b> {reversal_count}<br/>
-        <b>Thresholds:</b>
-        Momentum &ge;{SCREEN['momentum_ptile_min']}%tile &nbsp;
-        Reversal &le;{SCREEN['reversal_ptile_max']}%tile &nbsp;
-        Hit-rate &gt;{SCREEN['min_hit_rate']}% &nbsp;
-        Min analogues &ge;{SCREEN['min_n_obs']}
+        <b>Analogue band:</b> &plusmn;{PTILE_BAND} %tile<br/>
+        <b>&#9650; LONG signals:</b>
+          {len(momentum)} Momentum + {len(reversal)} Reversal
+          &nbsp;(hit-rate &gt;{SCREEN['min_hit_rate_long']}%,
+          %tile &ge;{SCREEN['momentum_ptile_min']} or &le;{SCREEN['reversal_ptile_max']})
+        &nbsp;|&nbsp;
+        <b>&#9660; SHORT signals:</b>
+          {len(fade)} Fade + {len(breakdown)} Breakdown
+          &nbsp;(hit-rate &lt;{SCREEN['max_hit_rate_short']}%,
+          same %tile zones)<br/>
+        <b>Min analogues:</b> {SCREEN['min_n_obs']}
+        &nbsp;|&nbsp;
+        <b>Conviction:</b> edge &times; return &times; depth &times; timing
       </div>
 
       {chart_html}
 
-      <h2 class="momentum-h">
-        Top Momentum Chase Signals &mdash;
-        high avg %tile &plus; analogues tilt bullish &rarr; chase continuation
+      <p class="section-label">&#9650; LONG &mdash; chase or buy the dip</p>
+
+      <h2 class="h-momentum">
+        Momentum Chase &mdash;
+        high %tile + hit&gt;{SCREEN['min_hit_rate_long']}% &rarr; analogues tilt bullish, chase continuation
       </h2>
       {_html_table(momentum, "MOMENTUM")}
 
-      <h2 class="reversal-h">
-        Top Reversal Candidates &mdash;
-        low avg %tile &plus; analogues tilt bullish &rarr; bet on mean reversion
+      <h2 class="h-reversal">
+        Reversal Candidates &mdash;
+        low %tile + hit&gt;{SCREEN['min_hit_rate_long']}% &rarr; history tilts to bounce, buy the dip
       </h2>
       {_html_table(reversal, "REVERSAL")}
 
+      <p class="section-label" style="margin-top:28px;">&#9660; SHORT &mdash; fade strength or avoid the falling knife</p>
+
+      <h2 class="h-fade">
+        Fade Candidates &mdash;
+        high %tile + hit&lt;{SCREEN['max_hit_rate_short']}% &rarr; analogues tilt bearish, fade the exhausted rally
+      </h2>
+      {_html_table(fade, "FADE")}
+
+      <h2 class="h-breakdown">
+        Breakdown Candidates &mdash;
+        low %tile + hit&lt;{SCREEN['max_hit_rate_short']}% &rarr; history keeps falling, don&apos;t catch the knife
+      </h2>
+      {_html_table(breakdown, "BREAKDOWN")}
+
       <div class="footer">
-        Source: Yahoo Finance &nbsp;|&nbsp;
-        History: 30 years &nbsp;|&nbsp;
+        Source: Yahoo Finance &nbsp;|&nbsp; History: 30 years &nbsp;|&nbsp;
         Percentile: expanding window (min 252 days, no look-ahead bias) &nbsp;|&nbsp;
-        Analogues: dates where historical %tile was within &plusmn;{PTILE_BAND}pts of today&apos;s reading &nbsp;|&nbsp;
-        Hit rate: % of analogues followed by a positive 1w/2w/4w return (averaged) &nbsp;|&nbsp;
-        Conviction = f(hit-rate edge, expected return, sample depth, timing bonus for early signals) &nbsp;|&nbsp;
-        &uarr;&uarr; building = slope &gt;+{SCREEN['early_slope_thresh']}pts &nbsp;
+        Analogues: historical dates within &plusmn;{PTILE_BAND}pts of today&apos;s %tile &nbsp;|&nbsp;
+        Hit rate: averaged across all (lookback &times; forward) combinations &nbsp;|&nbsp;
+        Conviction symmetric: LONG edge = hit&minus;50, SHORT edge = 50&minus;hit &nbsp;|&nbsp;
+        &uarr;&uarr; building = slope &gt;+{SCREEN['early_slope_thresh']}pts
+        (LONG: early momentum; FADE: premature short) &nbsp;|&nbsp;
         &darr;&darr; fading = slope &lt;&minus;{SCREEN['early_slope_thresh']}pts
+        (REVERSAL: ripe; FADE/BREAKDOWN: confirmed direction)
       </div>
     </body>
     </html>
