@@ -1,0 +1,16 @@
+# Credentials — never commit
+.env
+
+# Generated reports (large, regenerated weekly)
+screen_*.png
+screen_*.csv
+screen_*.html
+precedents_*.csv
+return_percentile_*.png
+logs/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
