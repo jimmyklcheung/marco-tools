@@ -236,8 +236,16 @@ def signal_vanna_flow(total_vannex: float, vix_change_1d: Optional[float] = None
 
     if vix_change_1d is not None:
         vix_direction = "falling" if vix_change_1d < 0 else "rising"
-        alignment = "aligned" if (vix_change_1d < 0) == is_positive else "diverging"
+        vix_aligned = (vix_change_1d < 0) == is_positive  # falling VIX aligns with positive vanna
+        alignment = "aligned" if vix_aligned else "diverging"
         rationale += f" VIX 1d change: {vix_change_1d:+.2f} ({vix_direction}) — {alignment} with vanna signal."
+
+        # Adjust score: if VIX is moving against the vanna signal, reduce conviction.
+        # Rising VIX (vol expansion) contradicts a positive vanna tailwind, and vice versa.
+        if not vix_aligned:
+            dampening = min(abs(vix_change_1d) / 5.0, 0.5)  # cap dampening at 0.5
+            score = float(np.clip(score * (1.0 - dampening), -1, 1))
+            value = value + "_DAMPENED"
 
     implications = [
         "Vol decline → dealer delta re-hedging creates systematic equity buying",
@@ -260,8 +268,10 @@ def signal_charm_flow(total_charmex: float, dte_nearest: Optional[int]) -> Signa
     Charm (delta decay) flow: daily delta P&L from time passage.
     Near expiry = charm accelerates (delta bleeding).
     """
+    # total_charmex is already in $/day (greeks.py divides by 365).
+    # Normalise: ±$50M/day = full score (±1).  Adjust threshold if needed.
     charmex_mm = total_charmex / 1e6
-    score = float(np.clip(charmex_mm / 500, -1, 1))
+    score = float(np.clip(charmex_mm / 50, -1, 1))
 
     if dte_nearest is not None and dte_nearest <= 5:
         magnitude = "STRONG"

@@ -58,7 +58,10 @@ def build_template_vars(
     total_put_gex = by_str["put_gex"].sum() if not by_str.empty else 0
 
     flip = report.flip_level
+    # Use raw (unrounded) values so sign is correct even when spot ≈ flip.
     dist_to_flip_pct = ((spot - flip) / spot * 100) if spot > 0 else 0
+    if abs(dist_to_flip_pct) < 0.01:
+        dist_to_flip_pct = 0.0
 
     # Walls
     from analytics.greeks import find_gamma_walls
@@ -68,6 +71,14 @@ def build_template_vars(
     call_wall_1 = float(call_walls["strike"].iloc[0]) if not call_walls.empty else None
     put_wall_1 = float(put_walls["strike"].iloc[0]) if not put_walls.empty else None
 
+    # Detect ATM pin/straddle node: same strike is both top call wall and top put wall
+    atm_tolerance = spot * 0.005  # 0.5% of spot
+    is_pin_node = (
+        call_wall_1 is not None
+        and put_wall_1 is not None
+        and abs(call_wall_1 - put_wall_1) <= atm_tolerance
+    )
+
     # Max pain
     from analytics.greeks import find_max_pain
     max_pain = find_max_pain(chain) if not chain.empty else None
@@ -76,16 +87,31 @@ def build_template_vars(
     key_levels_rows = []
     if not walls.empty:
         for _, row in walls.iterrows():
-            d = (float(row["strike"]) - spot) / spot * 100 if spot > 0 else 0
+            strike = float(row["strike"])
+            d = (strike - spot) / spot * 100 if spot > 0 else 0
+
+            # Interpretation depends on strike position relative to spot
+            if row["type"] == "call_wall":
+                if is_pin_node and abs(strike - call_wall_1) < 1:
+                    interp = "Pin / straddle concentration — dual-sided dealer exposure at ATM"
+                elif strike >= spot:
+                    interp = "Strong resistance / dealer selling above spot"
+                else:
+                    interp = "Below-spot call concentration / dealer buyback support"
+            else:  # put_wall
+                if is_pin_node and abs(strike - put_wall_1) < 1:
+                    interp = "Pin / straddle concentration — dual-sided dealer exposure at ATM"
+                elif strike <= spot:
+                    interp = "Downside accelerator / dealer selling pressure below spot"
+                else:
+                    interp = "Overhead put concentration / pin risk above spot"
+
             key_levels_rows.append({
-                "strike": float(row["strike"]),
+                "strike": strike,
                 "type": row["type"].replace("_", " ").title(),
                 "gex_m": float(row["gex_$"]) / 1e6,
                 "dist_pct": d,
-                "interpretation": (
-                    "Strong resistance / dealer selling" if row["type"] == "call_wall"
-                    else "Downside accelerator / dealer selling pressure"
-                ),
+                "interpretation": interp,
             })
 
     # Playbook

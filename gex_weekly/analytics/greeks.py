@@ -101,8 +101,9 @@ def compute_greeks(df: pd.DataFrame, spot: float, r: float, multiplier: int) -> 
     sigma = df["impliedVolatility"].values.astype(float)
     OI = np.where(np.isnan(df["openInterest"].values), 0, df["openInterest"].values).astype(float)
 
-    # Clip
-    T = np.maximum(T, 1e-6)
+    # Clip — use 1 calendar day minimum for T to prevent charm blowup on 0-DTE options.
+    # 1e-6 years ≈ 31 seconds, which causes charm to explode via 1/(2*T*sigma*sqrt(T)).
+    T = np.maximum(T, 1.0 / 365.0)
     sigma = np.maximum(sigma, 1e-6)
 
     # Option type sign: +1 call, -1 put
@@ -127,7 +128,9 @@ def compute_greeks(df: pd.DataFrame, spot: float, r: float, multiplier: int) -> 
     df["gex_$"] = df["gamma"] * OI * multiplier * S ** 2 * dealer_sign
     df["dex_$"] = df["delta"] * OI * multiplier * S
     df["vannex_$"] = df["vanna"] * OI * multiplier * S * dealer_sign
-    df["charmex_$"] = df["charm"] * OI * multiplier * S * dealer_sign
+    # charm (B-S) is annualised (dDelta/dT where T is in years).
+    # Divide by 365 to convert to a per-calendar-day delta flow in dollars.
+    df["charmex_$"] = df["charm"] * OI * multiplier * S * dealer_sign / 365.0
 
     return df
 
@@ -170,8 +173,11 @@ def aggregate_by_strike(df: pd.DataFrame) -> pd.DataFrame:
     result["net_dex"] = result["call_dex"] + result["put_dex"]
     result["net_vannex"] = result.get("call_vannex", 0) + result.get("put_vannex", 0)
     result["net_charmex"] = result.get("call_charmex", 0) + result.get("put_charmex", 0)
+    # PCR: require minimum call OI of 10 contracts to avoid ratio spikes from
+    # near-zero denominators.  Strikes with too-thin call OI are excluded (NaN).
+    min_call_oi = 10
     result["put_call_oi_ratio"] = np.where(
-        result["call_oi"] > 0,
+        result["call_oi"] >= min_call_oi,
         result["put_oi"] / result["call_oi"],
         np.nan
     )

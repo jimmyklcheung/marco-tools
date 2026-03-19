@@ -589,7 +589,7 @@
         <td class="{% if 'LONG' in inst.regime %}td-positive{% elif 'SHORT' in inst.regime %}td-negative{% else %}td-warning{% endif %}">
           {{ inst.regime.replace("_", " ") }}
         </td>
-        <td>{{ "{:,.0f}".format(inst.flip_level) if inst.flip_level else "N/A" }}</td>
+        <td>{{ "{:,.2f}".format(inst.flip_level) if inst.flip_level else "N/A" }}</td>
         <td class="{% if inst.dist_pct > 1.5 %}td-positive{% elif inst.dist_pct < -1.5 %}td-negative{% else %}td-warning{% endif %}">
           {{ "%+.1f"|format(inst.dist_pct) }}%
         </td>
@@ -600,19 +600,30 @@
     </tbody>
   </table>
 
-  <!-- Divergence detection -->
-  {% set regimes = multi_instrument | map(attribute='regime') | list %}
-  {% if regimes | unique | list | length > 1 %}
+  <!-- Divergence detection: dynamically generated from actual regime data -->
+  {% set long_gamma_insts  = multi_instrument | selectattr('regime', 'equalto', 'LONG_GAMMA')  | list %}
+  {% set short_gamma_insts = multi_instrument | selectattr('regime', 'equalto', 'SHORT_GAMMA') | list %}
+  {% if long_gamma_insts and short_gamma_insts %}
   <div class="divergence-note">
-    &#9888; REGIME DIVERGENCE DETECTED — Cross-instrument positioning is mixed. Review individual instrument signals.
-    Example: SPX long-gamma while IWM short-gamma = potential small-cap risk-off signal diverging from large-cap stability.
+    &#9888; REGIME DIVERGENCE DETECTED —
+    Long-gamma: {% for i in long_gamma_insts %}{{ i.key }}{% if not loop.last %}, {% endif %}{% endfor %};
+    Short-gamma: {% for i in short_gamma_insts %}{{ i.key }}{% if not loop.last %}, {% endif %}{% endfor %}.
+    Mixed positioning: dealers absorbing moves in long-gamma names while amplifying them in short-gamma names.
   </div>
   {% endif %}
 
   <div class="interp-box">
-    Cross-instrument divergences often precede sector rotations. When SPX is long-gamma but IWM is short-gamma,
-    institutional flow is concentrated in mega-cap names with less protection in small caps.
-    When QQQ gamma diverges from SPX, watch for tech-driven directional moves.
+    {% if long_gamma_insts and short_gamma_insts %}
+    Divergence between
+    {% for i in long_gamma_insts %}{{ i.key }}{% if not loop.last %}, {% endif %}{% endfor %}
+    (long-gamma, stable) and
+    {% for i in short_gamma_insts %}{{ i.key }}{% if not loop.last %}, {% endif %}{% endfor %}
+    (short-gamma, trending) signals potential sector rotation or flow concentration risk.
+    Monitor cross-asset vol and relative GEX size to assess which regime is dominant.
+    {% else %}
+    All instruments are in the same gamma regime — no cross-asset divergence detected.
+    Monitor relative GEX levels and flip proximity for early signs of regime change.
+    {% endif %}
   </div>
 </div>
 {% endif %}

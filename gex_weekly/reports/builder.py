@@ -111,7 +111,12 @@ def _process_instrument(inst: dict, config: dict) -> Optional[dict]:
     put_wall_1 = float(put_walls_df["strike"].iloc[0]) if not put_walls_df.empty else None
 
     regime = "LONG_GAMMA" if total_net_gex >= 0 else "SHORT_GAMMA"
+    # Compute dist_to_flip from raw (unrounded) values to preserve sign.
+    # Invariant: positive => spot is above flip (stable); negative => below flip (dangerous).
     dist_pct = ((spot - flip) / spot * 100) if spot > 0 else 0
+    # Guard: clamp near-zero noise — if |dist_pct| < 0.01% treat as zero
+    if abs(dist_pct) < 0.01:
+        dist_pct = 0.0
 
     return {
         "key": key,

@@ -329,10 +329,11 @@ def chart_put_call_ratio(
     col = _colors(cfg)
 
     try:
+        # Keep NaN so the valid-mask filter works; do NOT fillna here.
         strikes = by_str["strike"].values
-        pcr = by_str["put_call_oi_ratio"].fillna(0).values
+        pcr = by_str["put_call_oi_ratio"].values  # NaN where call OI < threshold
 
-        # Colour: green < 1, yellow ~ 1, red > 2
+        # Colour: green < 1, yellow 1-2, red > 2
         def pcr_color(v):
             if v < 1.0:
                 return col["call"]
@@ -340,19 +341,28 @@ def chart_put_call_ratio(
                 return "#ffd700"
             return col["put"]
 
+        # Drop strikes where call OI was too thin to produce a valid ratio
+        valid = ~np.isnan(pcr)
+        strikes = strikes[valid]
+        pcr = pcr[valid]
         bar_colors = [pcr_color(v) for v in pcr]
 
         fig = go.Figure()
-        fig.add_trace(go.Bar(x=strikes, y=pcr, marker_color=bar_colors, name="P/C Ratio"))
+        fig.add_trace(go.Bar(x=strikes, y=pcr, marker_color=bar_colors, name="P/C OI Ratio"))
         fig.add_hline(y=1.0, line_color="white", line_dash="dot",
                       annotation_text="1.0 (balanced)")
+        fig.add_hline(y=1.5, line_color="#ffd700", line_dash="dash",
+                      annotation_text="1.5 (elevated hedging)")
         fig.add_vline(x=spot, line_color=col["spot"],
                       annotation_text=f"Spot {spot:,.0f}", annotation_font_color=col["spot"])
 
         fig.update_layout(
             title="Put/Call OI Ratio by Strike",
             template="plotly_dark",
-            yaxis_title="P/C Ratio",
+            yaxis_title="Put/Call OI Ratio",
+            # Cap y-axis at 5 to prevent visual distortion from extreme outliers.
+            # Genuine hedging concentration rarely exceeds 5x; values above are data noise.
+            yaxis=dict(range=[0, 5]),
             height=h,
             margin=dict(l=60, r=40, t=60, b=40),
         )
