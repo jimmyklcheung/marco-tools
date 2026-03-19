@@ -110,8 +110,10 @@ def compute_greeks(df: pd.DataFrame, spot: float, r: float, multiplier: int) -> 
     opt_sign = np.where(is_call, 1.0, -1.0)
 
     # Dealer sign convention:
-    # Market makers are net short calls and net long puts (typical assumption)
-    # => Calls add positive GEX, puts subtract GEX
+    # Market makers are assumed net long calls (retail sells covered calls) and
+    # net short puts (institutions buy put protection from dealers).
+    # => Long calls: positive gamma → positive GEX contribution.
+    # => Short puts: negative gamma → negative GEX contribution.
     dealer_sign = np.where(is_call, 1.0, -1.0)
 
     S = float(spot)

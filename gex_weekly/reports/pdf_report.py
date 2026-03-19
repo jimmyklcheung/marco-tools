@@ -84,7 +84,7 @@ def build_template_vars(
                 "dist_pct": d,
                 "interpretation": (
                     "Strong resistance / dealer selling" if row["type"] == "call_wall"
-                    else "Support / dealer delta hedge floor"
+                    else "Downside accelerator / dealer selling pressure"
                 ),
             })
 

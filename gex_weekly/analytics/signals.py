@@ -334,7 +334,7 @@ def signal_put_skew(
     )
 
     implications = [
-        "High put skew: dealers long delta hedge → can provide natural support near put walls",
+        "High put skew: dealers short puts → forced to sell into weakness, amplifying downside moves",
         "Hedging demand exceeds upside speculation — institutional risk-off signal",
     ]
 
