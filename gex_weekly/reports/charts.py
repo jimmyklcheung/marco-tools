@@ -196,9 +196,20 @@ def chart_gex_by_expiry(
             name="Net GEX",
         ))
 
-        if next_opex:
-            fig.add_hline(y=next_opex, line_color=col["flip"], line_dash="dash",
-                          annotation_text="OPEX", annotation_font_color=col["flip"])
+        if next_opex and next_opex in list(expiries):
+            # add_hline doesn't work with categorical string y-axes; use a shape instead
+            fig.add_shape(
+                type="line",
+                x0=0, x1=1, xref="paper",
+                y0=next_opex, y1=next_opex, yref="y",
+                line=dict(color=col["flip"], dash="dash", width=2),
+            )
+            fig.add_annotation(
+                x=1, xref="paper",
+                y=next_opex, yref="y",
+                text="OPEX", showarrow=False,
+                xanchor="left", font=dict(color=col["flip"]),
+            )
 
         fig.update_layout(
             title="Net GEX by Expiry — Roll-Off Profile ($M)",
