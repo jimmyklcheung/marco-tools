@@ -212,6 +212,9 @@
     border: 1px solid #2a3040;
     border-radius: 3px;
     padding: 3mm;
+    /* Prevent a card from being split across a page break */
+    page-break-inside: avoid;
+    break-inside: avoid;
   }
   .signal-card .sig-header {
     display: flex;
@@ -470,10 +473,12 @@
   <img class="chart-img" style="max-height:55mm;" src="data:image/png;base64,{{ charts.opex_gex }}" alt="OPEX GEX">
   {% endif %}
 
+  {% if max_pain %}
   <div class="interp-box">
-    <strong>Max Pain:</strong> {{ "{:,.0f}".format(max_pain) if max_pain else "N/A" }} —
+    <strong>Max Pain:</strong> {{ "{:,.0f}".format(max_pain) }} —
     Market tends to gravitate toward max-pain strike in the final trading sessions before OPEX as dealers neutralise hedges.
   </div>
+  {% endif %}
 </div>
 
 
@@ -489,22 +494,28 @@
   {% if charts.vanna_charm %}
   <div class="section-header">VANNA &amp; CHARM EXPOSURE</div>
   <img class="chart-img" src="data:image/png;base64,{{ charts.vanna_charm }}" alt="Vanna Charm">
-  {% endif %}
-
   <div class="interp-box">
-    <strong>Vanna:</strong> dDelta/dSigma — when vol changes, dealers re-hedge delta mechanically. Positive vanna = vol compression drives equity buying.
-    <strong>Charm:</strong> dDelta/dT — daily delta decay creates intraday mechanical flows even without price movement. Strongest near OPEX.
+    <strong>Vanna (dDelta/dSigma):</strong> when implied vol changes, dealers mechanically re-hedge their delta.
+    Positive net vanna exposure = vol compression creates systematic equity buying pressure.
+    Negative net vanna = vol expansion creates systematic equity selling pressure.
+    <strong>Charm (dDelta/dT per day):</strong> delta decays daily with time even if price does not move.
+    Near OPEX this effect accelerates sharply and can distort intraday price action.
   </div>
+  {% endif %}
 
   {% if charts.put_call_ratio %}
-  <div class="section-header">PUT/CALL OI RATIO</div>
-  <img class="chart-img" src="data:image/png;base64,{{ charts.put_call_ratio }}" alt="Put Call Ratio">
-  {% endif %}
-
+  <div class="section-header">PUT/CALL OI RATIO BY STRIKE</div>
+  <img class="chart-img" src="data:image/png;base64,{{ charts.put_call_ratio }}" alt="Put Call OI Ratio">
   <div class="interp-box">
-    <strong>Put/Call Ratio:</strong> Values above 1.5 signal heavy defensive hedging by institutions.
-    Put walls represent strikes with heavy short-put dealer exposure — dealer delta selling below these levels can accelerate declines.
+    <strong>Put/Call OI Ratio (this chart):</strong> open-interest-based ratio per strike.
+    Strikes with OI ratio&nbsp;&gt;&nbsp;1.5 have heavy put accumulation relative to calls — typically defensive institutional hedging.
+    Strikes near zero or NaN had insufficient call OI (&lt;&nbsp;10 contracts) and are suppressed.
+    <strong>Note:</strong> the Put/Call Skew signal on the Signal Dashboard uses a separate
+    <em>GEX-weighted</em> ratio (total put GEX / total call GEX), not this OI chart.
+    The two metrics are related but not identical — OI ratio reflects positioning volume,
+    GEX ratio reflects gamma exposure and dealer hedging pressure.
   </div>
+  {% endif %}
 </div>
 
 
@@ -517,6 +528,7 @@
     <div class="date-block">{{ report_date }}</div>
   </div>
 
+  {% if charts.signal_bars or charts.gauge %}
   <div class="chart-row">
     {% if charts.signal_bars %}
     <div class="chart-col" style="flex:2;">
@@ -529,7 +541,9 @@
     </div>
     {% endif %}
   </div>
+  {% endif %}
 
+  {% if signals %}
   <!-- Signal cards -->
   <div class="section-header">SIGNAL DETAIL</div>
   <div class="signals-grid">
@@ -556,6 +570,7 @@
     </div>
     {% endfor %}
   </div>
+  {% endif %}
 </div>
 
 
