@@ -1,0 +1,87 @@
+# ── Report Identity ─────────────────────────────────────────────────────────
+report:
+  title: "SPX Options Flow — Weekly Macro Briefing"
+  author: "Macro Desk"
+  timezone: "America/New_York"   # Scheduler timezone
+
+# ── Instruments to analyse ──────────────────────────────────────────────────
+instruments:
+  - key: SPX
+    ticker: "^SPX"
+    multiplier: 100
+    label: "S&P 500 Index"
+    primary: true               # Primary instrument for headline metrics
+  - key: SPY
+    ticker: "SPY"
+    multiplier: 100
+    label: "SPDR S&P 500 ETF"
+  - key: QQQ
+    ticker: "QQQ"
+    multiplier: 100
+    label: "Invesco QQQ ETF"
+  - key: IWM
+    ticker: "IWM"
+    multiplier: 100
+    label: "iShares Russell 2000 ETF"
+
+# ── Options data parameters ─────────────────────────────────────────────────
+options:
+  max_expiries: 8
+  spot_range: 0.10              # ±10% of spot for strike filtering
+  risk_free_rate: 0.053         # Update periodically (US 3m T-bill)
+  cache_ttl_seconds: 300
+
+# ── Macro tickers ───────────────────────────────────────────────────────────
+macro:
+  VIX: "^VIX"
+  VVIX: "^VVIX"
+  DXY: "DX-Y.NYB"
+  TLT: "TLT"
+  HYG: "HYG"
+  GLD: "GLD"
+  CL: "CL=F"
+  ES: "ES=F"
+
+# ── Scheduler ───────────────────────────────────────────────────────────────
+schedule:
+  enabled: true
+  day_of_week: "mon"            # Run every Monday
+  hour: 7                       # 7:00 AM
+  minute: 30                    # 7:30 AM
+  timezone: "America/New_York"
+
+# ── Email delivery ───────────────────────────────────────────────────────────
+email:
+  enabled: false                # Set to true when ready
+  smtp_host: "smtp.gmail.com"
+  smtp_port: 587
+  smtp_user: "your@email.com"
+  smtp_password: "YOUR_APP_PASSWORD"   # Use Gmail App Password, not account password
+  from_name: "Macro GEX Report"
+  from_address: "your@email.com"
+  recipients:
+    - "pm@yourfund.com"
+    - "analyst@yourfund.com"
+  subject_template: "SPX GEX Weekly | {date} | Regime: {regime} | Risk: {risk_level}"
+
+# ── Archive ──────────────────────────────────────────────────────────────────
+archive:
+  root_dir: "./archive"
+  folder_format: "%Y-%m"        # Monthly subfolders: 2026-03/
+  filename_format: "gex_weekly_{date}.pdf"
+  keep_html: true               # Also keep HTML version
+  keep_csv: true                # Also keep raw data CSV
+
+# ── Charts ───────────────────────────────────────────────────────────────────
+charts:
+  width: 1200
+  height: 500
+  theme: "plotly_dark"
+  dpi: 150
+  colors:
+    call: "#00c9a7"
+    put: "#f76e6e"
+    net: "#5c9eff"
+    spot: "#ffd700"
+    flip: "#ff6b35"
+    wall: "#a8ff78"

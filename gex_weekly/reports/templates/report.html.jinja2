@@ -1,0 +1,621 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>{{ title }}</title>
+<style>
+  /* ── Page setup ─────────────────────────────────────────────────── */
+  @page {
+    size: 297mm 210mm landscape;
+    margin: 15mm 12mm 12mm 12mm;
+    @bottom-center {
+      content: "Confidential — {{ author }} | {{ timestamp }} | Page " counter(page) " of " counter(pages);
+      font-size: 8pt;
+      color: #888;
+    }
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
+    background: #0e1117;
+    color: #e0e0e0;
+    font-size: 9pt;
+    line-height: 1.4;
+  }
+
+  /* ── Page breaks ─────────────────────────────────────────────────── */
+  .page { page-break-after: always; padding: 2mm 0; }
+  .page:last-child { page-break-after: avoid; }
+
+  /* ── Headers ─────────────────────────────────────────────────────── */
+  .report-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    border-bottom: 2px solid #5c9eff;
+    padding-bottom: 4mm;
+    margin-bottom: 4mm;
+  }
+  .report-header .title-block h1 {
+    font-size: 18pt;
+    color: #5c9eff;
+    letter-spacing: 0.5px;
+  }
+  .report-header .title-block .subtitle {
+    font-size: 9pt;
+    color: #aaa;
+    margin-top: 1mm;
+  }
+  .report-header .date-block {
+    text-align: right;
+    color: #aaa;
+    font-size: 9pt;
+  }
+
+  .section-header {
+    font-size: 12pt;
+    color: #5c9eff;
+    border-bottom: 1px solid #333;
+    padding-bottom: 2mm;
+    margin: 4mm 0 3mm 0;
+    letter-spacing: 0.3px;
+  }
+
+  /* ── Badges ──────────────────────────────────────────────────────── */
+  .badge-row {
+    display: flex;
+    gap: 8mm;
+    margin: 4mm 0;
+    align-items: center;
+  }
+  .badge {
+    padding: 3mm 6mm;
+    border-radius: 3px;
+    font-weight: bold;
+    font-size: 12pt;
+    letter-spacing: 0.5px;
+  }
+  .badge-regime-long  { background: #003d00; color: #00c9a7; border: 1px solid #00c9a7; }
+  .badge-regime-short { background: #3d0000; color: #f76e6e; border: 1px solid #f76e6e; }
+  .badge-regime-neutral { background: #1e2530; color: #ffd700; border: 1px solid #ffd700; }
+  .badge-risk-low     { background: #003d00; color: #00c9a7; }
+  .badge-risk-medium  { background: #3d3000; color: #ffd700; }
+  .badge-risk-high    { background: #3d1500; color: #ff8c00; }
+  .badge-risk-extreme { background: #3d0000; color: #f76e6e; }
+
+  /* ── Metric cards ────────────────────────────────────────────────── */
+  .metrics-grid {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 3mm;
+    margin: 3mm 0;
+  }
+  .metric-card {
+    background: #1a1f2e;
+    border: 1px solid #2a3040;
+    border-radius: 3px;
+    padding: 2.5mm 4mm;
+    min-width: 38mm;
+    flex: 1;
+  }
+  .metric-card .label {
+    font-size: 7pt;
+    color: #888;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+  .metric-card .value {
+    font-size: 13pt;
+    color: #e0e0e0;
+    font-weight: bold;
+    margin-top: 0.5mm;
+  }
+  .metric-card .value.positive { color: #00c9a7; }
+  .metric-card .value.negative { color: #f76e6e; }
+  .metric-card .value.warning  { color: #ffd700; }
+
+  /* ── Summary text ────────────────────────────────────────────────── */
+  .summary-box {
+    background: #1a1f2e;
+    border-left: 3px solid #5c9eff;
+    padding: 3mm 5mm;
+    margin: 3mm 0;
+    font-size: 9pt;
+    color: #ccc;
+    line-height: 1.6;
+  }
+
+  /* ── Playbook ────────────────────────────────────────────────────── */
+  .playbook-grid {
+    display: flex;
+    gap: 3mm;
+    margin: 3mm 0;
+  }
+  .playbook-card {
+    flex: 1;
+    background: #1a1f2e;
+    border: 1px solid #2a3040;
+    border-radius: 3px;
+    padding: 2.5mm 4mm;
+  }
+  .playbook-card .pb-label {
+    font-size: 7pt;
+    color: #5c9eff;
+    text-transform: uppercase;
+    font-weight: bold;
+    margin-bottom: 1mm;
+  }
+  .playbook-card .pb-content {
+    font-size: 8pt;
+    color: #ddd;
+  }
+
+  /* ── Tables ──────────────────────────────────────────────────────── */
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 8pt;
+    margin: 2mm 0;
+  }
+  th {
+    background: #1a1f2e;
+    color: #5c9eff;
+    text-align: left;
+    padding: 2mm 3mm;
+    border-bottom: 1px solid #333;
+    font-size: 7.5pt;
+    text-transform: uppercase;
+  }
+  td {
+    padding: 2mm 3mm;
+    border-bottom: 1px solid #1e2530;
+    color: #ddd;
+  }
+  tr:nth-child(even) td { background: #111620; }
+  .td-positive { color: #00c9a7; font-weight: bold; }
+  .td-negative { color: #f76e6e; font-weight: bold; }
+  .td-warning  { color: #ffd700; font-weight: bold; }
+
+  /* ── Charts ──────────────────────────────────────────────────────── */
+  .chart-img {
+    width: 100%;
+    max-height: 90mm;
+    object-fit: contain;
+    display: block;
+    margin: 2mm 0;
+  }
+  .chart-img-half {
+    width: 49%;
+    max-height: 80mm;
+    object-fit: contain;
+    display: inline-block;
+  }
+  .chart-row {
+    display: flex;
+    gap: 2%;
+    margin: 2mm 0;
+  }
+  .chart-col { flex: 1; }
+
+  /* ── Signal cards ────────────────────────────────────────────────── */
+  .signals-grid {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 3mm;
+    margin: 3mm 0;
+  }
+  .signal-card {
+    flex: 0 0 48%;
+    background: #1a1f2e;
+    border: 1px solid #2a3040;
+    border-radius: 3px;
+    padding: 3mm;
+  }
+  .signal-card .sig-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 1.5mm;
+  }
+  .signal-card .sig-name { font-weight: bold; color: #e0e0e0; font-size: 9pt; }
+  .signal-card .sig-value { font-size: 7.5pt; color: #aaa; }
+  .signal-card .sig-score {
+    font-size: 11pt;
+    font-weight: bold;
+    padding: 1mm 2mm;
+    border-radius: 2px;
+  }
+  .sig-score-pos { color: #00c9a7; background: #003d00; }
+  .sig-score-neg { color: #f76e6e; background: #3d0000; }
+  .sig-score-neu { color: #ffd700; background: #3d3000; }
+  .signal-card .sig-magnitude {
+    font-size: 7pt;
+    text-transform: uppercase;
+    font-weight: bold;
+    letter-spacing: 0.5px;
+    margin-bottom: 1mm;
+  }
+  .mag-strong   { color: #f76e6e; }
+  .mag-moderate { color: #ffd700; }
+  .mag-weak     { color: #888; }
+  .signal-card .sig-rationale { font-size: 7.5pt; color: #bbb; margin-bottom: 1.5mm; }
+  .signal-card .sig-implications { font-size: 7pt; color: #888; }
+  .signal-card .sig-implications li { margin-left: 3mm; margin-bottom: 0.5mm; }
+
+  /* ── OPEX box ────────────────────────────────────────────────────── */
+  .opex-box {
+    background: #1a1f2e;
+    border: 1px solid #5c9eff;
+    border-radius: 3px;
+    padding: 3mm 5mm;
+    margin: 2mm 0;
+  }
+  .opex-box .opex-title { color: #5c9eff; font-weight: bold; font-size: 10pt; margin-bottom: 1.5mm; }
+  .opex-box .opex-row { display: flex; gap: 6mm; }
+  .opex-box .opex-item .o-label { font-size: 7pt; color: #888; }
+  .opex-box .opex-item .o-val { font-size: 10pt; font-weight: bold; }
+
+  /* ── Interpretive text ───────────────────────────────────────────── */
+  .interp-box {
+    background: #12161f;
+    border-left: 2px solid #5c9eff;
+    padding: 2mm 4mm;
+    margin: 2mm 0;
+    font-size: 8pt;
+    color: #bbb;
+  }
+
+  /* ── Multi-instrument ────────────────────────────────────────────── */
+  .divergence-note {
+    background: #1a1000;
+    border: 1px solid #ffd700;
+    border-radius: 3px;
+    padding: 2mm 4mm;
+    margin: 2mm 0;
+    font-size: 8pt;
+    color: #ffd700;
+  }
+</style>
+</head>
+<body>
+
+<!-- ═══════════════════════════════════════════════════════════════════════
+     PAGE 1 — COVER / EXECUTIVE SUMMARY
+════════════════════════════════════════════════════════════════════════ -->
+<div class="page">
+  <div class="report-header">
+    <div class="title-block">
+      <h1>{{ title }}</h1>
+      <div class="subtitle">Weekly Options Flow &amp; Dealer Positioning Analysis</div>
+    </div>
+    <div class="date-block">
+      <div><strong>Report Date:</strong> {{ report_date }}</div>
+      <div><strong>Author:</strong> {{ author }}</div>
+      <div style="margin-top:1mm; font-size:8pt;">Generated: {{ timestamp }}</div>
+    </div>
+  </div>
+
+  <!-- Regime + Risk badges -->
+  <div class="badge-row">
+    {% if "LONG" in regime %}
+    <div class="badge badge-regime-long">&#9650; {{ regime.replace("_", " ") }}</div>
+    {% elif "SHORT" in regime %}
+    <div class="badge badge-regime-short">&#9660; {{ regime.replace("_", " ") }}</div>
+    {% else %}
+    <div class="badge badge-regime-neutral">&#9644; {{ regime.replace("_", " ") }}</div>
+    {% endif %}
+
+    {% set risk_cls = {"LOW": "badge-risk-low", "MEDIUM": "badge-risk-medium", "HIGH": "badge-risk-high", "EXTREME": "badge-risk-extreme"} %}
+    <div class="badge {{ risk_cls.get(risk_level, 'badge-risk-medium') }}">RISK: {{ risk_level }}</div>
+
+    <div style="margin-left:auto; font-size:9pt; color:#aaa;">
+      Composite Score: <strong style="color:{% if composite_score > 0.2 %}#00c9a7{% elif composite_score < -0.2 %}#f76e6e{% else %}#ffd700{% endif %}; font-size:12pt;">{{ "%.2f"|format(composite_score) }}</strong>
+    </div>
+  </div>
+
+  <!-- Key metrics grid -->
+  <div class="metrics-grid">
+    <div class="metric-card">
+      <div class="label">SPX Spot</div>
+      <div class="value">{{ "{:,.0f}".format(spot) }}</div>
+    </div>
+    <div class="metric-card">
+      <div class="label">Net GEX</div>
+      <div class="value {% if net_gex_b > 0 %}positive{% else %}negative{% endif %}">
+        {{ "%+.2f"|format(net_gex_b) }}B
+      </div>
+    </div>
+    <div class="metric-card">
+      <div class="label">Gamma Flip</div>
+      <div class="value">{{ "{:,.0f}".format(flip_level) }}</div>
+    </div>
+    <div class="metric-card">
+      <div class="label">Dist. to Flip</div>
+      <div class="value {% if dist_to_flip_pct > 1.5 %}positive{% elif dist_to_flip_pct < -1.5 %}negative{% else %}warning{% endif %}">
+        {{ "%+.1f"|format(dist_to_flip_pct) }}%
+      </div>
+    </div>
+    <div class="metric-card">
+      <div class="label">Call Wall #1</div>
+      <div class="value positive">{{ "{:,.0f}".format(call_wall_1) if call_wall_1 else "N/A" }}</div>
+    </div>
+    <div class="metric-card">
+      <div class="label">Put Wall #1</div>
+      <div class="value negative">{{ "{:,.0f}".format(put_wall_1) if put_wall_1 else "N/A" }}</div>
+    </div>
+    <div class="metric-card">
+      <div class="label">Max Pain</div>
+      <div class="value">{{ "{:,.0f}".format(max_pain) if max_pain else "N/A" }}</div>
+    </div>
+    <div class="metric-card">
+      <div class="label">VIX</div>
+      <div class="value {% if vix and vix > 20 %}warning{% endif %}">
+        {{ "%.2f"|format(vix) if vix else "N/A" }}
+      </div>
+    </div>
+  </div>
+
+  <!-- Summary -->
+  <div class="summary-box">{{ summary }}</div>
+
+  <!-- Playbook -->
+  <div class="section-header">REGIME PLAYBOOK</div>
+  <div class="playbook-grid">
+    <div class="playbook-card">
+      <div class="pb-label">&#9650; Equities</div>
+      <div class="pb-content">{{ playbook.equities }}</div>
+    </div>
+    <div class="playbook-card">
+      <div class="pb-label">&#9670; Volatility</div>
+      <div class="pb-content">{{ playbook.vol }}</div>
+    </div>
+    <div class="playbook-card">
+      <div class="pb-label">&#9670; Options Strategy</div>
+      <div class="pb-content">{{ playbook.options }}</div>
+    </div>
+    <div class="playbook-card">
+      <div class="pb-label">&#9670; Position Sizing</div>
+      <div class="pb-content">{{ playbook.sizing }}</div>
+    </div>
+  </div>
+</div>
+
+
+<!-- ═══════════════════════════════════════════════════════════════════════
+     PAGE 2 — GEX PROFILE
+════════════════════════════════════════════════════════════════════════ -->
+<div class="page">
+  <div class="report-header">
+    <div class="title-block">
+      <h1 style="font-size:14pt;">GEX Profile — Dealer Gamma Exposure</h1>
+    </div>
+    <div class="date-block">{{ report_date }}</div>
+  </div>
+
+  {% if charts.gex_profile %}
+  <img class="chart-img" src="data:image/png;base64,{{ charts.gex_profile }}" alt="GEX Profile">
+  {% endif %}
+
+  <!-- Key levels table -->
+  {% if key_levels_rows %}
+  <div class="section-header">KEY LEVELS</div>
+  <table>
+    <thead>
+      <tr>
+        <th>Strike</th><th>Type</th><th>GEX ($M)</th>
+        <th>Dist. from Spot</th><th>Interpretation</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for row in key_levels_rows %}
+      <tr>
+        <td>{{ "{:,.0f}".format(row.strike) }}</td>
+        <td>{{ row.type }}</td>
+        <td class="{% if row.gex_m > 0 %}td-positive{% else %}td-negative{% endif %}">
+          {{ "%+.0f"|format(row.gex_m) }}M
+        </td>
+        <td>{{ "%+.1f"|format(row.dist_pct) }}%</td>
+        <td>{{ row.interpretation }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% endif %}
+
+  <!-- OPEX box -->
+  {% if opex_date %}
+  <div class="opex-box">
+    <div class="opex-title">OPEX: {{ opex_date }} ({{ opex_dte }} DTE)</div>
+    <div class="opex-row">
+      <div class="opex-item"><div class="o-label">Net GEX Expiring</div>
+        <div class="o-val" style="color:{% if opex_gex_expiring_m > 0 %}#00c9a7{% else %}#f76e6e{% endif %}">
+          ${{ "%+.0f"|format(opex_gex_expiring_m) }}M
+        </div></div>
+      <div class="opex-item"><div class="o-label">% of Total Book</div>
+        <div class="o-val">{{ "%.1f"|format(opex_pct_of_book) }}%</div></div>
+    </div>
+  </div>
+  {% endif %}
+</div>
+
+
+<!-- ═══════════════════════════════════════════════════════════════════════
+     PAGE 3 — EXPIRY & DELTA ANALYSIS
+════════════════════════════════════════════════════════════════════════ -->
+<div class="page">
+  <div class="report-header">
+    <div class="title-block"><h1 style="font-size:14pt;">Expiry Roll-Off &amp; Delta Exposure</h1></div>
+    <div class="date-block">{{ report_date }}</div>
+  </div>
+
+  <div class="chart-row">
+    {% if charts.gex_by_expiry %}
+    <div class="chart-col">
+      <div class="section-header">GEX BY EXPIRY</div>
+      <img class="chart-img" style="max-height:75mm;" src="data:image/png;base64,{{ charts.gex_by_expiry }}" alt="GEX by Expiry">
+    </div>
+    {% endif %}
+    {% if charts.dex_profile %}
+    <div class="chart-col">
+      <div class="section-header">DEX PROFILE</div>
+      <img class="chart-img" style="max-height:75mm;" src="data:image/png;base64,{{ charts.dex_profile }}" alt="DEX Profile">
+    </div>
+    {% endif %}
+  </div>
+
+  {% if charts.opex_gex %}
+  <div class="section-header">OPEX-SPECIFIC GEX ({{ opex_date }})</div>
+  <img class="chart-img" style="max-height:55mm;" src="data:image/png;base64,{{ charts.opex_gex }}" alt="OPEX GEX">
+  {% endif %}
+
+  <div class="interp-box">
+    <strong>Max Pain:</strong> {{ "{:,.0f}".format(max_pain) if max_pain else "N/A" }} —
+    Market tends to gravitate toward max-pain strike in the final trading sessions before OPEX as dealers neutralise hedges.
+  </div>
+</div>
+
+
+<!-- ═══════════════════════════════════════════════════════════════════════
+     PAGE 4 — FLOW ANALYTICS (VANNA, CHARM, SKEW)
+════════════════════════════════════════════════════════════════════════ -->
+<div class="page">
+  <div class="report-header">
+    <div class="title-block"><h1 style="font-size:14pt;">Flow Analytics — Vanna, Charm &amp; Put Skew</h1></div>
+    <div class="date-block">{{ report_date }}</div>
+  </div>
+
+  {% if charts.vanna_charm %}
+  <div class="section-header">VANNA &amp; CHARM EXPOSURE</div>
+  <img class="chart-img" src="data:image/png;base64,{{ charts.vanna_charm }}" alt="Vanna Charm">
+  {% endif %}
+
+  <div class="interp-box">
+    <strong>Vanna:</strong> dDelta/dSigma — when vol changes, dealers re-hedge delta mechanically. Positive vanna = vol compression drives equity buying.
+    <strong>Charm:</strong> dDelta/dT — daily delta decay creates intraday mechanical flows even without price movement. Strongest near OPEX.
+  </div>
+
+  {% if charts.put_call_ratio %}
+  <div class="section-header">PUT/CALL OI RATIO</div>
+  <img class="chart-img" src="data:image/png;base64,{{ charts.put_call_ratio }}" alt="Put Call Ratio">
+  {% endif %}
+
+  <div class="interp-box">
+    <strong>Put/Call Ratio:</strong> Values above 1.5 signal heavy defensive hedging by institutions.
+    Put walls represent strikes where dealer short put hedging provides natural support on selloffs.
+  </div>
+</div>
+
+
+<!-- ═══════════════════════════════════════════════════════════════════════
+     PAGE 5 — SIGNAL DASHBOARD
+════════════════════════════════════════════════════════════════════════ -->
+<div class="page">
+  <div class="report-header">
+    <div class="title-block"><h1 style="font-size:14pt;">Macro Signal Dashboard</h1></div>
+    <div class="date-block">{{ report_date }}</div>
+  </div>
+
+  <div class="chart-row">
+    {% if charts.signal_bars %}
+    <div class="chart-col" style="flex:2;">
+      <img class="chart-img" src="data:image/png;base64,{{ charts.signal_bars }}" alt="Signal Bars">
+    </div>
+    {% endif %}
+    {% if charts.gauge %}
+    <div class="chart-col" style="flex:1;">
+      <img class="chart-img" src="data:image/png;base64,{{ charts.gauge }}" alt="Gauge">
+    </div>
+    {% endif %}
+  </div>
+
+  <!-- Signal cards -->
+  <div class="section-header">SIGNAL DETAIL</div>
+  <div class="signals-grid">
+    {% for sig in signals %}
+    <div class="signal-card">
+      <div class="sig-header">
+        <div>
+          <div class="sig-name">{{ sig.name }}</div>
+          <div class="sig-value">{{ sig.value }}</div>
+        </div>
+        <div class="sig-score {% if sig.score > 0.2 %}sig-score-pos{% elif sig.score < -0.2 %}sig-score-neg{% else %}sig-score-neu{% endif %}">
+          {{ "%+.2f"|format(sig.score) }}
+        </div>
+      </div>
+      <div class="sig-magnitude {{ 'mag-' + sig.magnitude.lower() }}">{{ sig.magnitude }}</div>
+      <div class="sig-rationale">{{ sig.rationale }}</div>
+      {% if sig.asset_implications %}
+      <ul class="sig-implications">
+        {% for impl in sig.asset_implications[:3] %}
+        <li>{{ impl }}</li>
+        {% endfor %}
+      </ul>
+      {% endif %}
+    </div>
+    {% endfor %}
+  </div>
+</div>
+
+
+<!-- ═══════════════════════════════════════════════════════════════════════
+     PAGE 6 — MULTI-INSTRUMENT COMPARISON
+════════════════════════════════════════════════════════════════════════ -->
+{% if multi_instrument and multi_instrument|length > 1 %}
+<div class="page">
+  <div class="report-header">
+    <div class="title-block"><h1 style="font-size:14pt;">Multi-Instrument Positioning</h1></div>
+    <div class="date-block">{{ report_date }}</div>
+  </div>
+
+  <div class="section-header">CROSS-ASSET GEX SUMMARY</div>
+  <table>
+    <thead>
+      <tr>
+        <th>Instrument</th><th>Spot</th><th>Net GEX ($B)</th>
+        <th>Regime</th><th>Flip Level</th>
+        <th>Dist. to Flip</th><th>Call Wall</th><th>Put Wall</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for inst in multi_instrument %}
+      <tr>
+        <td><strong>{{ inst.key }}</strong> — {{ inst.label }}</td>
+        <td>{{ "{:,.2f}".format(inst.spot) }}</td>
+        <td class="{% if inst.net_gex_b > 0 %}td-positive{% else %}td-negative{% endif %}">
+          {{ "%+.2f"|format(inst.net_gex_b) }}B
+        </td>
+        <td class="{% if 'LONG' in inst.regime %}td-positive{% elif 'SHORT' in inst.regime %}td-negative{% else %}td-warning{% endif %}">
+          {{ inst.regime.replace("_", " ") }}
+        </td>
+        <td>{{ "{:,.0f}".format(inst.flip_level) if inst.flip_level else "N/A" }}</td>
+        <td class="{% if inst.dist_pct > 1.5 %}td-positive{% elif inst.dist_pct < -1.5 %}td-negative{% else %}td-warning{% endif %}">
+          {{ "%+.1f"|format(inst.dist_pct) }}%
+        </td>
+        <td class="td-positive">{{ "{:,.0f}".format(inst.call_wall) if inst.call_wall else "N/A" }}</td>
+        <td class="td-negative">{{ "{:,.0f}".format(inst.put_wall) if inst.put_wall else "N/A" }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+
+  <!-- Divergence detection -->
+  {% set regimes = multi_instrument | map(attribute='regime') | list %}
+  {% if regimes | unique | list | length > 1 %}
+  <div class="divergence-note">
+    &#9888; REGIME DIVERGENCE DETECTED — Cross-instrument positioning is mixed. Review individual instrument signals.
+    Example: SPX long-gamma while IWM short-gamma = potential small-cap risk-off signal diverging from large-cap stability.
+  </div>
+  {% endif %}
+
+  <div class="interp-box">
+    Cross-instrument divergences often precede sector rotations. When SPX is long-gamma but IWM is short-gamma,
+    institutional flow is concentrated in mega-cap names with less protection in small caps.
+    When QQQ gamma diverges from SPX, watch for tech-driven directional moves.
+  </div>
+</div>
+{% endif %}
+
+</body>
+</html>

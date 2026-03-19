@@ -1,0 +1,841 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>SPX Options Flow — Weekly Macro Briefing</title>
+<style>
+  /* ── Page setup ─────────────────────────────────────────────────── */
+  @page {
+    size: 297mm 210mm landscape;
+    margin: 15mm 12mm 12mm 12mm;
+    @bottom-center {
+      content: "Confidential — Macro Desk | 2026-03-19 11:46 ET | Page " counter(page) " of " counter(pages);
+      font-size: 8pt;
+      color: #888;
+    }
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
+    background: #0e1117;
+    color: #e0e0e0;
+    font-size: 9pt;
+    line-height: 1.4;
+  }
+
+  /* ── Page breaks ─────────────────────────────────────────────────── */
+  .page { page-break-after: always; padding: 2mm 0; }
+  .page:last-child { page-break-after: avoid; }
+
+  /* ── Headers ─────────────────────────────────────────────────────── */
+  .report-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    border-bottom: 2px solid #5c9eff;
+    padding-bottom: 4mm;
+    margin-bottom: 4mm;
+  }
+  .report-header .title-block h1 {
+    font-size: 18pt;
+    color: #5c9eff;
+    letter-spacing: 0.5px;
+  }
+  .report-header .title-block .subtitle {
+    font-size: 9pt;
+    color: #aaa;
+    margin-top: 1mm;
+  }
+  .report-header .date-block {
+    text-align: right;
+    color: #aaa;
+    font-size: 9pt;
+  }
+
+  .section-header {
+    font-size: 12pt;
+    color: #5c9eff;
+    border-bottom: 1px solid #333;
+    padding-bottom: 2mm;
+    margin: 4mm 0 3mm 0;
+    letter-spacing: 0.3px;
+  }
+
+  /* ── Badges ──────────────────────────────────────────────────────── */
+  .badge-row {
+    display: flex;
+    gap: 8mm;
+    margin: 4mm 0;
+    align-items: center;
+  }
+  .badge {
+    padding: 3mm 6mm;
+    border-radius: 3px;
+    font-weight: bold;
+    font-size: 12pt;
+    letter-spacing: 0.5px;
+  }
+  .badge-regime-long  { background: #003d00; color: #00c9a7; border: 1px solid #00c9a7; }
+  .badge-regime-short { background: #3d0000; color: #f76e6e; border: 1px solid #f76e6e; }
+  .badge-regime-neutral { background: #1e2530; color: #ffd700; border: 1px solid #ffd700; }
+  .badge-risk-low     { background: #003d00; color: #00c9a7; }
+  .badge-risk-medium  { background: #3d3000; color: #ffd700; }
+  .badge-risk-high    { background: #3d1500; color: #ff8c00; }
+  .badge-risk-extreme { background: #3d0000; color: #f76e6e; }
+
+  /* ── Metric cards ────────────────────────────────────────────────── */
+  .metrics-grid {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 3mm;
+    margin: 3mm 0;
+  }
+  .metric-card {
+    background: #1a1f2e;
+    border: 1px solid #2a3040;
+    border-radius: 3px;
+    padding: 2.5mm 4mm;
+    min-width: 38mm;
+    flex: 1;
+  }
+  .metric-card .label {
+    font-size: 7pt;
+    color: #888;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+  .metric-card .value {
+    font-size: 13pt;
+    color: #e0e0e0;
+    font-weight: bold;
+    margin-top: 0.5mm;
+  }
+  .metric-card .value.positive { color: #00c9a7; }
+  .metric-card .value.negative { color: #f76e6e; }
+  .metric-card .value.warning  { color: #ffd700; }
+
+  /* ── Summary text ────────────────────────────────────────────────── */
+  .summary-box {
+    background: #1a1f2e;
+    border-left: 3px solid #5c9eff;
+    padding: 3mm 5mm;
+    margin: 3mm 0;
+    font-size: 9pt;
+    color: #ccc;
+    line-height: 1.6;
+  }
+
+  /* ── Playbook ────────────────────────────────────────────────────── */
+  .playbook-grid {
+    display: flex;
+    gap: 3mm;
+    margin: 3mm 0;
+  }
+  .playbook-card {
+    flex: 1;
+    background: #1a1f2e;
+    border: 1px solid #2a3040;
+    border-radius: 3px;
+    padding: 2.5mm 4mm;
+  }
+  .playbook-card .pb-label {
+    font-size: 7pt;
+    color: #5c9eff;
+    text-transform: uppercase;
+    font-weight: bold;
+    margin-bottom: 1mm;
+  }
+  .playbook-card .pb-content {
+    font-size: 8pt;
+    color: #ddd;
+  }
+
+  /* ── Tables ──────────────────────────────────────────────────────── */
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 8pt;
+    margin: 2mm 0;
+  }
+  th {
+    background: #1a1f2e;
+    color: #5c9eff;
+    text-align: left;
+    padding: 2mm 3mm;
+    border-bottom: 1px solid #333;
+    font-size: 7.5pt;
+    text-transform: uppercase;
+  }
+  td {
+    padding: 2mm 3mm;
+    border-bottom: 1px solid #1e2530;
+    color: #ddd;
+  }
+  tr:nth-child(even) td { background: #111620; }
+  .td-positive { color: #00c9a7; font-weight: bold; }
+  .td-negative { color: #f76e6e; font-weight: bold; }
+  .td-warning  { color: #ffd700; font-weight: bold; }
+
+  /* ── Charts ──────────────────────────────────────────────────────── */
+  .chart-img {
+    width: 100%;
+    max-height: 90mm;
+    object-fit: contain;
+    display: block;
+    margin: 2mm 0;
+  }
+  .chart-img-half {
+    width: 49%;
+    max-height: 80mm;
+    object-fit: contain;
+    display: inline-block;
+  }
+  .chart-row {
+    display: flex;
+    gap: 2%;
+    margin: 2mm 0;
+  }
+  .chart-col { flex: 1; }
+
+  /* ── Signal cards ────────────────────────────────────────────────── */
+  .signals-grid {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 3mm;
+    margin: 3mm 0;
+  }
+  .signal-card {
+    flex: 0 0 48%;
+    background: #1a1f2e;
+    border: 1px solid #2a3040;
+    border-radius: 3px;
+    padding: 3mm;
+  }
+  .signal-card .sig-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 1.5mm;
+  }
+  .signal-card .sig-name { font-weight: bold; color: #e0e0e0; font-size: 9pt; }
+  .signal-card .sig-value { font-size: 7.5pt; color: #aaa; }
+  .signal-card .sig-score {
+    font-size: 11pt;
+    font-weight: bold;
+    padding: 1mm 2mm;
+    border-radius: 2px;
+  }
+  .sig-score-pos { color: #00c9a7; background: #003d00; }
+  .sig-score-neg { color: #f76e6e; background: #3d0000; }
+  .sig-score-neu { color: #ffd700; background: #3d3000; }
+  .signal-card .sig-magnitude {
+    font-size: 7pt;
+    text-transform: uppercase;
+    font-weight: bold;
+    letter-spacing: 0.5px;
+    margin-bottom: 1mm;
+  }
+  .mag-strong   { color: #f76e6e; }
+  .mag-moderate { color: #ffd700; }
+  .mag-weak     { color: #888; }
+  .signal-card .sig-rationale { font-size: 7.5pt; color: #bbb; margin-bottom: 1.5mm; }
+  .signal-card .sig-implications { font-size: 7pt; color: #888; }
+  .signal-card .sig-implications li { margin-left: 3mm; margin-bottom: 0.5mm; }
+
+  /* ── OPEX box ────────────────────────────────────────────────────── */
+  .opex-box {
+    background: #1a1f2e;
+    border: 1px solid #5c9eff;
+    border-radius: 3px;
+    padding: 3mm 5mm;
+    margin: 2mm 0;
+  }
+  .opex-box .opex-title { color: #5c9eff; font-weight: bold; font-size: 10pt; margin-bottom: 1.5mm; }
+  .opex-box .opex-row { display: flex; gap: 6mm; }
+  .opex-box .opex-item .o-label { font-size: 7pt; color: #888; }
+  .opex-box .opex-item .o-val { font-size: 10pt; font-weight: bold; }
+
+  /* ── Interpretive text ───────────────────────────────────────────── */
+  .interp-box {
+    background: #12161f;
+    border-left: 2px solid #5c9eff;
+    padding: 2mm 4mm;
+    margin: 2mm 0;
+    font-size: 8pt;
+    color: #bbb;
+  }
+
+  /* ── Multi-instrument ────────────────────────────────────────────── */
+  .divergence-note {
+    background: #1a1000;
+    border: 1px solid #ffd700;
+    border-radius: 3px;
+    padding: 2mm 4mm;
+    margin: 2mm 0;
+    font-size: 8pt;
+    color: #ffd700;
+  }
+</style>
+</head>
+<body>
+
+<!-- ═══════════════════════════════════════════════════════════════════════
+     PAGE 1 — COVER / EXECUTIVE SUMMARY
+════════════════════════════════════════════════════════════════════════ -->
+<div class="page">
+  <div class="report-header">
+    <div class="title-block">
+      <h1>SPX Options Flow — Weekly Macro Briefing</h1>
+      <div class="subtitle">Weekly Options Flow &amp; Dealer Positioning Analysis</div>
+    </div>
+    <div class="date-block">
+      <div><strong>Report Date:</strong> March 19, 2026</div>
+      <div><strong>Author:</strong> Macro Desk</div>
+      <div style="margin-top:1mm; font-size:8pt;">Generated: 2026-03-19 11:46 ET</div>
+    </div>
+  </div>
+
+  <!-- Regime + Risk badges -->
+  <div class="badge-row">
+    
+    <div class="badge badge-regime-short">&#9660; SHORT GAMMA</div>
+    
+
+    
+    <div class="badge badge-risk-extreme">RISK: EXTREME</div>
+
+    <div style="margin-left:auto; font-size:9pt; color:#aaa;">
+      Composite Score: <strong style="color:#f76e6e; font-size:12pt;">-0.38</strong>
+    </div>
+  </div>
+
+  <!-- Key metrics grid -->
+  <div class="metrics-grid">
+    <div class="metric-card">
+      <div class="label">SPX Spot</div>
+      <div class="value">6,625</div>
+    </div>
+    <div class="metric-card">
+      <div class="label">Net GEX</div>
+      <div class="value negative">
+        -2468.32B
+      </div>
+    </div>
+    <div class="metric-card">
+      <div class="label">Gamma Flip</div>
+      <div class="value">5,970</div>
+    </div>
+    <div class="metric-card">
+      <div class="label">Dist. to Flip</div>
+      <div class="value positive">
+        +9.9%
+      </div>
+    </div>
+    <div class="metric-card">
+      <div class="label">Call Wall #1</div>
+      <div class="value positive">6,625</div>
+    </div>
+    <div class="metric-card">
+      <div class="label">Put Wall #1</div>
+      <div class="value negative">6,625</div>
+    </div>
+    <div class="metric-card">
+      <div class="label">Max Pain</div>
+      <div class="value">6,690</div>
+    </div>
+    <div class="metric-card">
+      <div class="label">VIX</div>
+      <div class="value warning">
+        25.72
+      </div>
+    </div>
+  </div>
+
+  <!-- Summary -->
+  <div class="summary-box">Dealers are in SHORT GAMMA with net GEX of $-2468.32B. Spot (6,625) sits 9.9% above the gamma flip level (5,970). Composite macro score: -0.38 → Risk Level: EXTREME. Key risks: BEARISH_VOL_BUY, OPEX 1DTE, DAILY_DELTA_OUTFLOW, BEARISH_SKEW_HEAVY.</div>
+
+  <!-- Playbook -->
+  <div class="section-header">REGIME PLAYBOOK</div>
+  <div class="playbook-grid">
+    <div class="playbook-card">
+      <div class="pb-label">&#9650; Equities</div>
+      <div class="pb-content">Reduce net delta, buy downside puts for protection</div>
+    </div>
+    <div class="playbook-card">
+      <div class="pb-label">&#9670; Volatility</div>
+      <div class="pb-content">Long VIX, buy volatility — trend moves may persist</div>
+    </div>
+    <div class="playbook-card">
+      <div class="pb-label">&#9670; Options Strategy</div>
+      <div class="pb-content">Long straddles, buy gamma for directional exposure</div>
+    </div>
+    <div class="playbook-card">
+      <div class="pb-label">&#9670; Position Sizing</div>
+      <div class="pb-content">Reduce 30–50% — elevated tail risk in short-gamma regime</div>
+    </div>
+  </div>
+</div>
+
+
+<!-- ═══════════════════════════════════════════════════════════════════════
+     PAGE 2 — GEX PROFILE
+════════════════════════════════════════════════════════════════════════ -->
+<div class="page">
+  <div class="report-header">
+    <div class="title-block">
+      <h1 style="font-size:14pt;">GEX Profile — Dealer Gamma Exposure</h1>
+    </div>
+    <div class="date-block">March 19, 2026</div>
+  </div>
+
+  
+  <img class="chart-img" src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGP4//8/AAX+Av4N70a4AAAAAElFTkSuQmCC" alt="GEX Profile">
+  
+
+  <!-- Key levels table -->
+  
+  <div class="section-header">KEY LEVELS</div>
+  <table>
+    <thead>
+      <tr>
+        <th>Strike</th><th>Type</th><th>GEX ($M)</th>
+        <th>Dist. from Spot</th><th>Interpretation</th>
+      </tr>
+    </thead>
+    <tbody>
+      
+      <tr>
+        <td>6,625</td>
+        <td>Call Wall</td>
+        <td class="td-positive">
+          +950529M
+        </td>
+        <td>+0.0%</td>
+        <td>Strong resistance / dealer selling</td>
+      </tr>
+      
+      <tr>
+        <td>6,750</td>
+        <td>Call Wall</td>
+        <td class="td-positive">
+          +113535M
+        </td>
+        <td>+1.9%</td>
+        <td>Strong resistance / dealer selling</td>
+      </tr>
+      
+      <tr>
+        <td>6,700</td>
+        <td>Call Wall</td>
+        <td class="td-positive">
+          +75445M
+        </td>
+        <td>+1.1%</td>
+        <td>Strong resistance / dealer selling</td>
+      </tr>
+      
+      <tr>
+        <td>6,625</td>
+        <td>Put Wall</td>
+        <td class="td-negative">
+          -2016558M
+        </td>
+        <td>+0.0%</td>
+        <td>Support / dealer delta hedge floor</td>
+      </tr>
+      
+      <tr>
+        <td>6,600</td>
+        <td>Put Wall</td>
+        <td class="td-negative">
+          -551700M
+        </td>
+        <td>-0.4%</td>
+        <td>Support / dealer delta hedge floor</td>
+      </tr>
+      
+      <tr>
+        <td>6,700</td>
+        <td>Put Wall</td>
+        <td class="td-negative">
+          -116090M
+        </td>
+        <td>+1.1%</td>
+        <td>Support / dealer delta hedge floor</td>
+      </tr>
+      
+    </tbody>
+  </table>
+  
+
+  <!-- OPEX box -->
+  
+  <div class="opex-box">
+    <div class="opex-title">OPEX: 2026-03-20 (1 DTE)</div>
+    <div class="opex-row">
+      <div class="opex-item"><div class="o-label">Net GEX Expiring</div>
+        <div class="o-val" style="color:#f76e6e">
+          $-607922M
+        </div></div>
+      <div class="opex-item"><div class="o-label">% of Total Book</div>
+        <div class="o-val">24.6%</div></div>
+    </div>
+  </div>
+  
+</div>
+
+
+<!-- ═══════════════════════════════════════════════════════════════════════
+     PAGE 3 — EXPIRY & DELTA ANALYSIS
+════════════════════════════════════════════════════════════════════════ -->
+<div class="page">
+  <div class="report-header">
+    <div class="title-block"><h1 style="font-size:14pt;">Expiry Roll-Off &amp; Delta Exposure</h1></div>
+    <div class="date-block">March 19, 2026</div>
+  </div>
+
+  <div class="chart-row">
+    
+    <div class="chart-col">
+      <div class="section-header">GEX BY EXPIRY</div>
+      <img class="chart-img" style="max-height:75mm;" src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGP4//8/AAX+Av4N70a4AAAAAElFTkSuQmCC" alt="GEX by Expiry">
+    </div>
+    
+    
+    <div class="chart-col">
+      <div class="section-header">DEX PROFILE</div>
+      <img class="chart-img" style="max-height:75mm;" src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGP4//8/AAX+Av4N70a4AAAAAElFTkSuQmCC" alt="DEX Profile">
+    </div>
+    
+  </div>
+
+  
+  <div class="section-header">OPEX-SPECIFIC GEX (2026-03-20)</div>
+  <img class="chart-img" style="max-height:55mm;" src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGP4//8/AAX+Av4N70a4AAAAAElFTkSuQmCC" alt="OPEX GEX">
+  
+
+  <div class="interp-box">
+    <strong>Max Pain:</strong> 6,690 —
+    Market tends to gravitate toward max-pain strike in the final trading sessions before OPEX as dealers neutralise hedges.
+  </div>
+</div>
+
+
+<!-- ═══════════════════════════════════════════════════════════════════════
+     PAGE 4 — FLOW ANALYTICS (VANNA, CHARM, SKEW)
+════════════════════════════════════════════════════════════════════════ -->
+<div class="page">
+  <div class="report-header">
+    <div class="title-block"><h1 style="font-size:14pt;">Flow Analytics — Vanna, Charm &amp; Put Skew</h1></div>
+    <div class="date-block">March 19, 2026</div>
+  </div>
+
+  
+  <div class="section-header">VANNA &amp; CHARM EXPOSURE</div>
+  <img class="chart-img" src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGP4//8/AAX+Av4N70a4AAAAAElFTkSuQmCC" alt="Vanna Charm">
+  
+
+  <div class="interp-box">
+    <strong>Vanna:</strong> dDelta/dSigma — when vol changes, dealers re-hedge delta mechanically. Positive vanna = vol compression drives equity buying.
+    <strong>Charm:</strong> dDelta/dT — daily delta decay creates intraday mechanical flows even without price movement. Strongest near OPEX.
+  </div>
+
+  
+  <div class="section-header">PUT/CALL OI RATIO</div>
+  <img class="chart-img" src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGP4//8/AAX+Av4N70a4AAAAAElFTkSuQmCC" alt="Put Call Ratio">
+  
+
+  <div class="interp-box">
+    <strong>Put/Call Ratio:</strong> Values above 1.5 signal heavy defensive hedging by institutions.
+    Put walls represent strikes where dealer short put hedging provides natural support on selloffs.
+  </div>
+</div>
+
+
+<!-- ═══════════════════════════════════════════════════════════════════════
+     PAGE 5 — SIGNAL DASHBOARD
+════════════════════════════════════════════════════════════════════════ -->
+<div class="page">
+  <div class="report-header">
+    <div class="title-block"><h1 style="font-size:14pt;">Macro Signal Dashboard</h1></div>
+    <div class="date-block">March 19, 2026</div>
+  </div>
+
+  <div class="chart-row">
+    
+    <div class="chart-col" style="flex:2;">
+      <img class="chart-img" src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGP4//8/AAX+Av4N70a4AAAAAElFTkSuQmCC" alt="Signal Bars">
+    </div>
+    
+    
+    <div class="chart-col" style="flex:1;">
+      <img class="chart-img" src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGP4//8/AAX+Av4N70a4AAAAAElFTkSuQmCC" alt="Gauge">
+    </div>
+    
+  </div>
+
+  <!-- Signal cards -->
+  <div class="section-header">SIGNAL DETAIL</div>
+  <div class="signals-grid">
+    
+    <div class="signal-card">
+      <div class="sig-header">
+        <div>
+          <div class="sig-name">Gamma Regime</div>
+          <div class="sig-value">BEARISH_VOL_BUY</div>
+        </div>
+        <div class="sig-score sig-score-neg">
+          -1.00
+        </div>
+      </div>
+      <div class="sig-magnitude mag-strong">STRONG</div>
+      <div class="sig-rationale">Net GEX = $-2468.32B → dealers are SHORT GAMMA. Spot is 9.9% above gamma flip at 5,970.</div>
+      
+      <ul class="sig-implications">
+        
+        <li>Equities: trending moves more likely, reduce net delta exposure</li>
+        
+        <li>Vol: VIX spikes may persist — avoid short vol</li>
+        
+        <li>Options: long gamma / straddles for directional flexibility</li>
+        
+      </ul>
+      
+    </div>
+    
+    <div class="signal-card">
+      <div class="sig-header">
+        <div>
+          <div class="sig-name">Flip Proximity</div>
+          <div class="sig-value">ABOVE FLIP: STABLE</div>
+        </div>
+        <div class="sig-score sig-score-neu">
+          +0.20
+        </div>
+      </div>
+      <div class="sig-magnitude mag-weak">WEAK</div>
+      <div class="sig-rationale">Spot (6,625) is 9.9% above gamma flip (5,970). Dealer support likely on dips toward flip.</div>
+      
+      <ul class="sig-implications">
+        
+        <li>Watch 5,970 as key inflection — sustained close above = regime shift</li>
+        
+        <li>Volatility clustering risk increases near flip</li>
+        
+      </ul>
+      
+    </div>
+    
+    <div class="signal-card">
+      <div class="sig-header">
+        <div>
+          <div class="sig-name">OPEX Countdown</div>
+          <div class="sig-value">OPEX 1DTE</div>
+        </div>
+        <div class="sig-score sig-score-neg">
+          -0.70
+        </div>
+      </div>
+      <div class="sig-magnitude mag-strong">STRONG</div>
+      <div class="sig-rationale">OPEX in 1 DTE (CRITICAL urgency). $-607922M net GEX expiring = 24.6% of total book. Pin behaviour likely near OPEX strikes.</div>
+      
+      <ul class="sig-implications">
+        
+        <li>Pin risk: market may gravitate to max-pain strike ±0.5% as OPEX approaches</li>
+        
+        <li>Post-OPEX: expect vol reset once large GEX concentration expires</li>
+        
+        <li>Book impact: 24.6% of dealer delta hedging unwind at OPEX</li>
+        
+      </ul>
+      
+    </div>
+    
+    <div class="signal-card">
+      <div class="sig-header">
+        <div>
+          <div class="sig-name">Vanna Flow</div>
+          <div class="sig-value">VOL_FALL_BID</div>
+        </div>
+        <div class="sig-score sig-score-pos">
+          +1.00
+        </div>
+      </div>
+      <div class="sig-magnitude mag-strong">STRONG</div>
+      <div class="sig-rationale">Vanna exposure = $+133527M. Vol compression → mechanical equity bid via delta re-hedging. VIX 1d change: +0.63 (rising) — diverging with vanna signal.</div>
+      
+      <ul class="sig-implications">
+        
+        <li>Vol decline → dealer delta re-hedging creates systematic equity buying</li>
+        
+        <li>Watch VIX 1d direction as leading indicator of vanna flow direction</li>
+        
+        <li>Strong positive vanna + falling VIX = powerful mechanical tailwind</li>
+        
+      </ul>
+      
+    </div>
+    
+    <div class="signal-card">
+      <div class="sig-header">
+        <div>
+          <div class="sig-name">Charm Flow</div>
+          <div class="sig-value">DAILY_DELTA_OUTFLOW</div>
+        </div>
+        <div class="sig-score sig-score-neg">
+          -1.00
+        </div>
+      </div>
+      <div class="sig-magnitude mag-strong">STRONG</div>
+      <div class="sig-rationale">Charm exposure = $-14184823M/day. DTE=0: charm acceleration is sharp near expiry. Negative charm = net delta drain as time passes.</div>
+      
+      <ul class="sig-implications">
+        
+        <li>Charm creates mechanical daily delta flows even with no price movement</li>
+        
+        <li>Near OPEX, charm accelerates and can distort intraday price action</li>
+        
+      </ul>
+      
+    </div>
+    
+    <div class="signal-card">
+      <div class="sig-header">
+        <div>
+          <div class="sig-name">Put/Call Skew</div>
+          <div class="sig-value">BEARISH_SKEW_HEAVY</div>
+        </div>
+        <div class="sig-score sig-score-neg">
+          -0.80
+        </div>
+      </div>
+      <div class="sig-magnitude mag-strong">STRONG</div>
+      <div class="sig-rationale">Put/Call GEX ratio = 2.49. Heavy put protection in dealer books — bearish defensive positioning. Put wall at 6,625 (+0.0% from spot).</div>
+      
+      <ul class="sig-implications">
+        
+        <li>High put skew: dealers long delta hedge → can provide natural support near put walls</li>
+        
+        <li>Hedging demand exceeds upside speculation — institutional risk-off signal</li>
+        
+      </ul>
+      
+    </div>
+    
+  </div>
+</div>
+
+
+<!-- ═══════════════════════════════════════════════════════════════════════
+     PAGE 6 — MULTI-INSTRUMENT COMPARISON
+════════════════════════════════════════════════════════════════════════ -->
+
+<div class="page">
+  <div class="report-header">
+    <div class="title-block"><h1 style="font-size:14pt;">Multi-Instrument Positioning</h1></div>
+    <div class="date-block">March 19, 2026</div>
+  </div>
+
+  <div class="section-header">CROSS-ASSET GEX SUMMARY</div>
+  <table>
+    <thead>
+      <tr>
+        <th>Instrument</th><th>Spot</th><th>Net GEX ($B)</th>
+        <th>Regime</th><th>Flip Level</th>
+        <th>Dist. to Flip</th><th>Call Wall</th><th>Put Wall</th>
+      </tr>
+    </thead>
+    <tbody>
+      
+      <tr>
+        <td><strong>SPX</strong> — S&P 500 Index</td>
+        <td>6,624.70</td>
+        <td class="td-negative">
+          -2468.32B
+        </td>
+        <td class="td-negative">
+          SHORT GAMMA
+        </td>
+        <td>5,970</td>
+        <td class="td-positive">
+          +9.9%
+        </td>
+        <td class="td-positive">6,625</td>
+        <td class="td-negative">6,625</td>
+      </tr>
+      
+      <tr>
+        <td><strong>SPY</strong> — SPDR S&P 500 ETF</td>
+        <td>661.43</td>
+        <td class="td-positive">
+          +189.39B
+        </td>
+        <td class="td-positive">
+          LONG GAMMA
+        </td>
+        <td>661</td>
+        <td class="td-warning">
+          +0.1%
+        </td>
+        <td class="td-positive">662</td>
+        <td class="td-negative">640</td>
+      </tr>
+      
+      <tr>
+        <td><strong>QQQ</strong> — Invesco QQQ ETF</td>
+        <td>594.90</td>
+        <td class="td-positive">
+          +4595.83B
+        </td>
+        <td class="td-positive">
+          LONG GAMMA
+        </td>
+        <td>594</td>
+        <td class="td-warning">
+          +0.1%
+        </td>
+        <td class="td-positive">595</td>
+        <td class="td-negative">594</td>
+      </tr>
+      
+      <tr>
+        <td><strong>IWM</strong> — iShares Russell 2000 ETF</td>
+        <td>246.02</td>
+        <td class="td-positive">
+          +0.52B
+        </td>
+        <td class="td-positive">
+          LONG GAMMA
+        </td>
+        <td>246</td>
+        <td class="td-warning">
+          -0.0%
+        </td>
+        <td class="td-positive">247</td>
+        <td class="td-negative">245</td>
+      </tr>
+      
+    </tbody>
+  </table>
+
+  <!-- Divergence detection -->
+  
+  
+  <div class="divergence-note">
+    &#9888; REGIME DIVERGENCE DETECTED — Cross-instrument positioning is mixed. Review individual instrument signals.
+    Example: SPX long-gamma while IWM short-gamma = potential small-cap risk-off signal diverging from large-cap stability.
+  </div>
+  
+
+  <div class="interp-box">
+    Cross-instrument divergences often precede sector rotations. When SPX is long-gamma but IWM is short-gamma,
+    institutional flow is concentrated in mega-cap names with less protection in small caps.
+    When QQQ gamma diverges from SPX, watch for tech-driven directional moves.
+  </div>
+</div>
+
+
+</body>
+</html>
