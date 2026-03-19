@@ -161,3 +161,27 @@ def test_wall_type_labels():
     # Top put wall = strike with most negative put_gex
     top_put = walls[walls["type"] == "put_wall"].iloc[0]["strike"]
     assert top_put == 6700.0, f"Top put wall should be 6700 (most negative put_gex), got {top_put}"
+
+
+def test_find_gamma_flip_no_zero_cross_fallback():
+    """
+    When the cumulative GEX curve never crosses zero (all one sign),
+    find_gamma_flip must not raise and must return a finite strike near the smallest |GEX|.
+    Regression: previously the function could silently return spot even when a better
+    fallback strike is available.
+    """
+    # All net_gex positive — no zero crossing
+    by_str = pd.DataFrame({
+        "strike": [6500.0, 6550.0, 6600.0, 6650.0],
+        "net_gex": [1e8, 2e8, 5e8, 3e8],
+        "call_gex": [1e8, 2e8, 5e8, 3e8],
+        "put_gex": [0.0, 0.0, 0.0, 0.0],
+    })
+    spot = 6600.0
+    flip = find_gamma_flip(by_str, spot)
+    # Must be a real strike, not spot (which has no special meaning here)
+    assert math.isfinite(flip), f"flip must be finite, got {flip}"
+    assert flip in [6500.0, 6550.0, 6600.0, 6650.0], \
+        f"Fallback flip should be one of the strikes (smallest |net_gex|), got {flip}"
+    # Smallest |net_gex| is 6500 (1e8)
+    assert flip == 6500.0, f"Fallback should pick strike with smallest |net_gex|=1e8 (6500), got {flip}"

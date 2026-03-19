@@ -127,3 +127,55 @@ def test_gex_display_uses_B_for_large_values():
         # Values >= 1B should show B
         if abs(row["gex_m"]) >= 1000:   # gex_m is in $M, so 1000M = $1B
             assert "B" in gex_str, f"GEX ≥ $1B should show as B: '{gex_str}'"
+
+
+def test_dual_sided_concentration_is_pin_node():
+    """
+    When the top call wall and top put wall are at the same strike (within 0.5%),
+    both should be labelled as pin/straddle concentration, not resistance/accelerator.
+    """
+    import pandas as pd
+    from reports.pdf_report import build_template_vars
+
+    spot = 6600.0
+    atm_strike = 6610.0   # 0.15% above spot — within 0.5% tolerance
+
+    # Same strike dominates both call_gex and put_gex
+    by_str = pd.DataFrame({
+        "strike": [atm_strike, spot + 200],
+        "call_gex": [8e9, 1e9],
+        "put_gex":  [-8e9, -1e9],
+        "net_gex":  [0.0, 0.0],
+        "call_oi":  [2000.0, 500.0],
+        "put_oi":   [2000.0, 500.0],
+        "net_dex":  [0.0, 0.0],
+        "call_dex": [0.0, 0.0],
+        "put_dex":  [0.0, 0.0],
+        "net_vannex":   [0.0, 0.0],
+        "net_charmex":  [0.0, 0.0],
+        "put_call_oi_ratio": [float("nan"), float("nan")],
+    })
+
+    config = {"report": {"title": "Test", "author": "Test"}}
+    tvars = build_template_vars(
+        spot=spot,
+        by_str=by_str,
+        by_exp=pd.DataFrame(),
+        chain=pd.DataFrame(),
+        report=MockReport(),
+        opex_data={},
+        multi_data=[],
+        chart_paths={},
+        config=config,
+    )
+    rows = tvars["key_levels_rows"]
+
+    call_row = next(r for r in rows if r["type"] == "Call Wall")
+    put_row = next(r for r in rows if r["type"] == "Put Wall")
+
+    assert "pin" in call_row["interpretation"].lower() or \
+           "straddle" in call_row["interpretation"].lower(), \
+        f"Dual-sided call wall should be pin/straddle node: '{call_row['interpretation']}'"
+    assert "pin" in put_row["interpretation"].lower() or \
+           "straddle" in put_row["interpretation"].lower(), \
+        f"Dual-sided put wall should be pin/straddle node: '{put_row['interpretation']}'"
