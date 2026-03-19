@@ -38,6 +38,19 @@ def _fmt_dollar(value: float, unit: str = "auto") -> str:
     return f"${value / 1e6:+.0f}M"
 
 
+def _fmt_gex(gex_dollars: float) -> str:
+    """
+    Auto-scale GEX dollar value for display in the key levels table.
+    SPX strikes aggregate across 8 expiries and routinely reach hundreds of billions;
+    always showing raw $M produces unreadable 6-digit strings like '+391342M'.
+    Threshold: use B if |value| >= $1B, else M.
+    """
+    abs_val = abs(gex_dollars)
+    if abs_val >= 1e9:
+        return f"{gex_dollars / 1e9:+.1f}B"
+    return f"{gex_dollars / 1e6:+.0f}M"
+
+
 def build_template_vars(
     spot: float,
     by_str: pd.DataFrame,
@@ -83,14 +96,17 @@ def build_template_vars(
     from analytics.greeks import find_max_pain
     max_pain = find_max_pain(chain) if not chain.empty else None
 
+    # Thresholds for wall classification (computed from raw spot, never rounded)
+    near_atm_pct = 1.0   # ≤1% from spot = near-ATM pin zone
+
     # Key levels rows
     key_levels_rows = []
     if not walls.empty:
         for _, row in walls.iterrows():
             strike = float(row["strike"])
-            d = (strike - spot) / spot * 100 if spot > 0 else 0
+            d = (strike - spot) / spot * 100 if spot > 0 else 0  # raw % distance
 
-            # Interpretation depends on strike position relative to spot
+            # Interpretation: derived entirely from computed values, no hardcoded examples.
             if row["type"] == "call_wall":
                 if is_pin_node and abs(strike - call_wall_1) < 1:
                     interp = "Pin / straddle concentration — dual-sided dealer exposure at ATM"
@@ -103,13 +119,24 @@ def build_template_vars(
                     interp = "Pin / straddle concentration — dual-sided dealer exposure at ATM"
                 elif strike <= spot:
                     interp = "Downside accelerator / dealer selling pressure below spot"
+                elif abs(d) <= near_atm_pct:
+                    # Put wall is above spot but within 1% — nearly ATM, ITM put
+                    # mechanics dominate: delta cliff + pin gravity at expiry.
+                    interp = (
+                        f"Near-ATM pin/magnet ({d:+.1f}%) — ITM put concentration; "
+                        "dealers long delta that unwinds if spot closes above this strike"
+                    )
                 else:
-                    interp = "Overhead put concentration / pin risk above spot"
+                    interp = (
+                        f"Overhead put concentration ({d:+.1f}% above spot) — "
+                        "deep ITM puts; dealer long-delta hedge unwind risk if spot rallies through"
+                    )
 
             key_levels_rows.append({
                 "strike": strike,
                 "type": row["type"].replace("_", " ").title(),
-                "gex_m": float(row["gex_$"]) / 1e6,
+                "gex_fmt": _fmt_gex(float(row["gex_$"])),   # auto B/M display
+                "gex_m": float(row["gex_$"]) / 1e6,         # kept for backward compat
                 "dist_pct": d,
                 "interpretation": interp,
             })

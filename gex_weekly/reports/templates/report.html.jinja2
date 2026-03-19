@@ -404,7 +404,7 @@
   <table>
     <thead>
       <tr>
-        <th>Strike</th><th>Type</th><th>GEX ($M)</th>
+        <th>Strike</th><th>Type</th><th>GEX</th>
         <th>Dist. from Spot</th><th>Interpretation</th>
       </tr>
     </thead>
@@ -414,7 +414,7 @@
         <td>{{ "{:,.0f}".format(row.strike) }}</td>
         <td>{{ row.type }}</td>
         <td class="{% if row.gex_m > 0 %}td-positive{% else %}td-negative{% endif %}">
-          {{ "%+.0f"|format(row.gex_m) }}M
+          {{ row.gex_fmt }}
         </td>
         <td>{{ "%+.1f"|format(row.dist_pct) }}%</td>
         <td>{{ row.interpretation }}</td>

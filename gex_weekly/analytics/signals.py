@@ -314,10 +314,10 @@ def signal_put_skew(
     """
     Put-call GEX skew: heavy put GEX = bearish dealer positioning.
     """
-    if total_call_gex == 0:
-        ratio = 0.0
-    else:
-        ratio = abs(total_put_gex) / max(abs(total_call_gex), 1)
+    # Always compute ratio via the same path. When call_gex == 0 the max(abs, 1)
+    # guard returns abs(put_gex) / 1, which correctly gives a very high ratio
+    # (heavy bearish) rather than zero (which would map to neutral — the wrong sign).
+    ratio = abs(total_put_gex) / max(abs(total_call_gex), 1)
 
     if ratio > 1.5:
         score = -0.8

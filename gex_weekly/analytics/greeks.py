@@ -65,15 +65,19 @@ def bs_vanna(S, K, T, r, sigma) -> np.ndarray:
 def bs_charm(S, K, T, r, sigma, option_type_sign: np.ndarray) -> np.ndarray:
     """
     Black-Scholes charm = dDelta/dT (vectorised).
-    Negative of the standard charm formula to represent daily delta decay.
-    option_type_sign: +1 for calls, -1 for puts.
+
+    By put-call parity (C - P = S - Ke^{-rT}), differentiating twice gives
+    dDelta_call/dT == dDelta_put/dT, so calls and puts share the same formula.
+    The result is the annualised rate of delta change per year of time-to-expiry.
+    Divide by 365 in compute_greeks() to get daily dollar exposure (charmex_$).
+
+    option_type_sign is accepted for API consistency but does not alter the output.
     """
     T = np.maximum(T, 1e-6)
     sigma = np.maximum(sigma, 1e-6)
     d1, d2 = _d1_d2(S, K, T, r, sigma)
-    charm_call = norm.pdf(d1) * (2 * r * T - d2 * sigma * np.sqrt(T)) / (2 * T * sigma * np.sqrt(T))
-    charm_put = charm_call  # same formula, sign adjusted below
-    return np.where(option_type_sign > 0, charm_call, charm_call - norm.pdf(d1) * 0)
+    charm = norm.pdf(d1) * (2 * r * T - d2 * sigma * np.sqrt(T)) / (2 * T * sigma * np.sqrt(T))
+    return charm
 
 
 # ── Full Greeks computation on a chain DataFrame ─────────────────────────────
