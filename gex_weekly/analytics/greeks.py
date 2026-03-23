@@ -206,6 +206,30 @@ def aggregate_by_expiry(df: pd.DataFrame) -> pd.DataFrame:
     return result
 
 
+def aggregate_by_book(
+    df: pd.DataFrame,
+    dte_max: int,
+    dte_min: int = 0,
+) -> pd.DataFrame:
+    """
+    Aggregate by strike for a specific DTE bucket (a 'book').
+
+    Parameters
+    ----------
+    df      : full options chain with dte column
+    dte_max : inclusive upper bound on DTE (e.g. 5 for tactical front-end)
+    dte_min : inclusive lower bound (default 0)
+
+    Returns same schema as aggregate_by_strike for the filtered chain.
+    """
+    if df.empty:
+        return pd.DataFrame()
+    sub = df[(df["dte"] >= dte_min) & (df["dte"] <= dte_max)].copy()
+    if sub.empty:
+        return pd.DataFrame()
+    return aggregate_by_strike(sub)
+
+
 # ── Key levels ────────────────────────────────────────────────────────────────
 
 def find_gamma_flip(agg: pd.DataFrame, spot: float) -> float:

@@ -523,3 +523,103 @@ def chart_signal_gauge(composite_score: float, output_path: str) -> str:
         _write_blank_png(output_path)
 
     return output_path
+
+
+def chart_scenario_gex(
+    scenario,               # ScenarioResult from analytics/scenario.py
+    spot: float,
+    level_classifications,  # list[LevelClassification]
+    output_path: str,
+) -> str:
+    """
+    Hero chart: modeled net dealer GEX vs hypothetical spot price.
+
+    GEX > 0 (green) = long-gamma zone: dealer flows compress moves.
+    GEX < 0 (red)   = short-gamma zone: dealer flows amplify moves.
+    Zero-crossing = modeled flip level(s).
+    """
+    cfg = _load_chart_config()
+    w, h = _dims(cfg)
+    col = _colors(cfg)
+
+    try:
+        grid = scenario.spot_grid
+        gex_b = scenario.net_gex_curve / 1e9
+
+        fig = go.Figure()
+
+        # Positive (long-gamma) filled region
+        pos_gex = np.where(gex_b > 0, gex_b, 0.0)
+        neg_gex = np.where(gex_b < 0, gex_b, 0.0)
+        fig.add_trace(go.Scatter(
+            x=grid, y=pos_gex, fill="tozeroy",
+            fillcolor="rgba(0,201,167,0.15)",
+            line=dict(color=col["call"], width=1.5),
+            name="Long-Gamma Zone",
+        ))
+        fig.add_trace(go.Scatter(
+            x=grid, y=neg_gex, fill="tozeroy",
+            fillcolor="rgba(247,110,110,0.15)",
+            line=dict(color=col["put"], width=1.5),
+            name="Short-Gamma Zone",
+        ))
+        fig.add_trace(go.Scatter(
+            x=grid, y=gex_b,
+            line=dict(color=col["net"], width=2.5),
+            name="Net Dealer GEX",
+        ))
+
+        # Current spot
+        fig.add_vline(
+            x=spot, line_color=col["spot"], line_dash="solid", line_width=2,
+            annotation_text=f"Spot {spot:,.0f}",
+            annotation_font_color=col["spot"],
+        )
+
+        # Modeled flip levels
+        for i, flip in enumerate(scenario.flip_levels):
+            label = f"Flip {flip:,.0f}" if i == 0 else f"Flip₂ {flip:,.0f}"
+            fig.add_vline(
+                x=flip, line_color=col["flip"], line_dash="dash", line_width=2,
+                annotation_text=label, annotation_font_color=col["flip"],
+            )
+
+        # Key classified levels
+        cls_colors = {
+            "pin": "#a8ff78",
+            "resistance": col["put"],
+            "accelerator": "#ff6b35",
+            "support": col["call"],
+            "concentration": "#aaa",
+            "ambiguous": "#666",
+        }
+        for lc in (level_classifications or [])[:6]:
+            lvl_col = cls_colors.get(lc.classification, "#888")
+            fig.add_vline(
+                x=lc.strike, line_color=lvl_col, line_dash="dot", line_width=1,
+                annotation_text=f"{lc.strike:,.0f}",
+                annotation_font_color=lvl_col, annotation_font_size=9,
+            )
+
+        fig.add_hline(y=0, line_color="white", line_dash="dot", line_width=1)
+
+        flip_label = (
+            scenario.flip_status.replace("_", " ").title()
+            if scenario.flip_status != "modeled"
+            else f"Flip: {scenario.primary_flip:,.0f}"
+        )
+        fig.update_layout(
+            title=f"Modeled Net Dealer GEX vs Hypothetical Spot ({flip_label})",
+            template="plotly_dark",
+            xaxis_title="Hypothetical Spot Price",
+            yaxis_title="Net Dealer GEX ($B)",
+            height=h,
+            legend=dict(orientation="h", y=1.02),
+            margin=dict(l=70, r=40, t=70, b=50),
+        )
+        _save_fig(fig, output_path, w, h)
+    except Exception as e:
+        logger.warning(f"chart_scenario_gex failed: {e}")
+        _write_blank_png(output_path)
+
+    return output_path

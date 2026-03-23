@@ -49,16 +49,23 @@ def _make_output_dir(config: dict) -> str:
     return out_dir
 
 
-def _process_instrument(inst: dict, config: dict) -> Optional[dict]:
+def _process_instrument(inst: dict, config: dict, prior_state: dict = None) -> Optional[dict]:
     """
     Fetch + compute Greeks for one instrument.
+    Includes scenario engine, QA checks, and book decomposition.
     Returns a result dict or None on failure.
     """
     from data.fetcher import get_spot, get_all_chains, get_next_opex
     from analytics.greeks import (
         compute_greeks, aggregate_by_strike, aggregate_by_expiry,
-        find_gamma_flip, find_gamma_walls, find_max_pain, opex_expiring_gex,
+        find_gamma_walls, find_max_pain, opex_expiring_gex,
     )
+    from analytics.scenario import (
+        compute_scenario, check_sign_sensitivity, classify_level,
+        compute_books, detect_roll,
+    )
+    from validation.qa import run_qa
+    from core.instruments import get_or_default
 
     key = inst["key"]
     ticker = inst["ticker"]
@@ -68,6 +75,9 @@ def _process_instrument(inst: dict, config: dict) -> Optional[dict]:
     max_exp = opts.get("max_expiries", 8)
     spot_range = opts.get("spot_range", 0.10)
     cache_ttl = opts.get("cache_ttl_seconds", 300)
+
+    # Look up instrument metadata (fails loudly for unregistered instruments)
+    meta = get_or_default(key, multiplier)
 
     logger.info(f"Processing {key} ({ticker})")
 
@@ -89,12 +99,71 @@ def _process_instrument(inst: dict, config: dict) -> Optional[dict]:
     by_str = aggregate_by_strike(chain)
     by_exp = aggregate_by_expiry(chain)
 
-    flip = find_gamma_flip(by_str, spot) if not by_str.empty else spot
+    # Scenario engine: modeled GEX vs hypothetical spot
+    scenario = compute_scenario(chain, spot, r, multiplier, sign_model="street")
+    # Sign sensitivity check
+    sign_sens = check_sign_sensitivity(chain, spot, r, multiplier)
+
+    # Modeled flip
+    primary_flip = scenario.primary_flip
+    flip_status = scenario.flip_status
+    flip_confidence = scenario.flip_confidence
+
+    # Legacy-compat: also run old cumsum flip for wall computation fallback
+    from analytics.greeks import find_gamma_flip
+    cumsum_flip = find_gamma_flip(by_str, spot) if not by_str.empty else spot
+    # Use modeled flip for display; cumsum as last resort if scenario fails
+    flip = primary_flip if primary_flip else cumsum_flip
+
     walls = find_gamma_walls(by_str) if not by_str.empty else pd.DataFrame()
     max_pain = find_max_pain(chain) if not chain.empty else 0.0
 
     next_opex = get_next_opex(ticker)
     opex_data = opex_expiring_gex(chain, next_opex) if next_opex else {}
+
+    # Book decomposition: structural / tactical / OPEX
+    tactical_dte = config.get("options", {}).get("tactical_max_dte", 5)
+    books = compute_books(
+        chain=chain, by_str=by_str, spot=spot, r=r, multiplier=multiplier,
+        tactical_max_dte=tactical_dte, opex_date=next_opex,
+    )
+
+    # Front expiry for roll detection
+    front_expiry = str(by_exp["expiry"].iloc[0]) if not by_exp.empty and "expiry" in by_exp.columns else None
+
+    # Roll detection vs prior state
+    prior_inst = (prior_state or {}).get(key, {})
+    prior_front = prior_inst.get("front_expiry")
+    prior_flip_val = prior_inst.get("flip_level")
+    roll_status = detect_roll(front_expiry, prior_front, prior_flip_val, flip, spot)
+    if roll_status.roll_detected:
+        logger.info(f"[{key}] Roll detected: {roll_status.roll_note}")
+
+    # QA
+    qa = run_qa(
+        chain=chain, by_str=by_str, spot=spot, key=key,
+        flip_status=flip_status, flip_confidence=flip_confidence,
+        sign_stable=sign_sens.regime_stable and sign_sens.flip_stable,
+        sign_unstable_fields=sign_sens.unstable_fields,
+        prior_net_gex=prior_inst.get("net_gex"),
+        prior_flip=prior_flip_val,
+    )
+    logger.info(f"[{key}] QA: {qa.publish_status} | Confidence: {qa.confidence}%")
+
+    # Level classification using scenario engine
+    stress_scenario = sign_sens.stress
+    classified_levels = []
+    if not walls.empty:
+        for _, row in walls.iterrows():
+            lc = classify_level(
+                strike=float(row["strike"]),
+                wall_type=row["type"],
+                scenario=scenario,
+                stress_scenario=stress_scenario,
+                by_str=by_str,
+                spot=spot,
+            )
+            classified_levels.append(lc)
 
     # Aggregate totals
     total_net_gex = by_str["net_gex"].sum() if not by_str.empty else 0
@@ -110,13 +179,13 @@ def _process_instrument(inst: dict, config: dict) -> Optional[dict]:
     call_wall_1 = float(call_walls["strike"].iloc[0]) if not call_walls.empty else None
     put_wall_1 = float(put_walls_df["strike"].iloc[0]) if not put_walls_df.empty else None
 
-    regime = "LONG_GAMMA" if total_net_gex >= 0 else "SHORT_GAMMA"
-    # Compute dist_to_flip from raw (unrounded) values to preserve sign.
-    # Invariant: positive => spot is above flip (stable); negative => below flip (dangerous).
-    dist_pct = ((spot - flip) / spot * 100) if spot > 0 else 0
-    # Guard: clamp near-zero noise — if |dist_pct| < 0.01% treat as zero
+    regime = scenario.regime_at_spot
+    dist_pct = ((spot - flip) / spot * 100) if spot > 0 and flip else 0
     if abs(dist_pct) < 0.01:
         dist_pct = 0.0
+
+    # Hedge flow per 1% move: GEX / spot (normalised sensitivity)
+    hedge_flow_per_1pct = total_net_gex / spot / 100 if spot > 0 else 0
 
     return {
         "key": key,
@@ -128,6 +197,15 @@ def _process_instrument(inst: dict, config: dict) -> Optional[dict]:
         "by_str": by_str,
         "by_exp": by_exp,
         "flip": flip,
+        "flip_status": flip_status,
+        "flip_confidence": flip_confidence,
+        "primary_flip": primary_flip,
+        "scenario": scenario,
+        "sign_sensitivity": sign_sens,
+        "classified_levels": classified_levels,
+        "books": books,
+        "roll_status": roll_status,
+        "qa": qa,
         "walls": walls,
         "call_walls": call_walls,
         "put_walls": put_walls_df,
@@ -135,6 +213,7 @@ def _process_instrument(inst: dict, config: dict) -> Optional[dict]:
         "put_wall_1": put_wall_1,
         "max_pain": max_pain,
         "next_opex": next_opex,
+        "front_expiry": front_expiry,
         "opex_data": opex_data,
         "total_net_gex": total_net_gex,
         "total_call_gex": total_call_gex,
@@ -145,6 +224,11 @@ def _process_instrument(inst: dict, config: dict) -> Optional[dict]:
         "regime": regime,
         "dist_pct": dist_pct,
         "net_gex_b": total_net_gex / 1e9,
+        "hedge_flow_per_1pct": hedge_flow_per_1pct,
+        "futures_equivalent": meta.futures_equivalent,
+        "futures_multiplier": meta.futures_multiplier,
+        "confidence_label": qa.confidence_label,
+        "confidence_int": qa.confidence,
     }
 
 
@@ -153,7 +237,8 @@ def _generate_charts(primary: dict, output_dir: str, report) -> dict:
     from reports.charts import (
         chart_gex_profile, chart_gex_by_expiry, chart_dex_profile,
         chart_vanna_charm, chart_put_call_ratio, chart_opex_gex,
-        chart_macro_signals, chart_signal_gauge, _write_blank_png,
+        chart_macro_signals, chart_signal_gauge, chart_scenario_gex,
+        _write_blank_png,
     )
 
     charts_dir = os.path.join(output_dir, "charts")
@@ -168,6 +253,8 @@ def _generate_charts(primary: dict, output_dir: str, report) -> dict:
     next_opex = primary["next_opex"]
     max_pain = primary["max_pain"]
     chain = primary["chain"]
+    scenario = primary.get("scenario")
+    classified_levels = primary.get("classified_levels", [])
 
     def _safe_chart(name, fn, *args, **kwargs):
         path = os.path.join(charts_dir, f"{name}.png")
@@ -178,6 +265,11 @@ def _generate_charts(primary: dict, output_dir: str, report) -> dict:
             logger.warning(f"Chart {name} failed: {e}")
             _write_blank_png(path)
             paths[name] = path
+
+    # Hero chart: modeled GEX vs hypothetical spot (page 1)
+    if scenario is not None:
+        _safe_chart("scenario_gex", chart_scenario_gex,
+                    scenario, spot, classified_levels)
 
     _safe_chart("gex_profile", chart_gex_profile,
                 by_str, spot, flip, call_walls, put_walls)
@@ -243,6 +335,16 @@ def run_weekly_report(
     logger.info(f"Output: {output_dir}")
     logger.info("=" * 60)
 
+    # ── Step 0: Load prior state for what-changed and QA comparison ──
+    from validation.qa import load_prior_state, save_prior_state, build_state_snapshot
+    state_file = os.path.join(
+        config.get("archive", {}).get("root_dir", "./archive"),
+        "prior_state.json"
+    )
+    prior_state_raw = load_prior_state(state_file)
+    prior_instruments = prior_state_raw.get("instruments", {})
+    logger.info(f"Prior state: {'loaded' if prior_instruments else 'not available'}")
+
     # ── Step 1: Process each instrument ──────────────────────────────
     instruments = config.get("instruments", [])
     results = {}
@@ -250,7 +352,7 @@ def run_weekly_report(
 
     for inst in instruments:
         try:
-            res = _process_instrument(inst, config)
+            res = _process_instrument(inst, config, prior_state=prior_instruments)
             results[inst["key"]] = res
             if res and res.get("primary"):
                 primary_result = res
@@ -316,6 +418,60 @@ def run_weekly_report(
         logger.error(f"Chart generation failed: {e}")
         chart_paths = {}
 
+    # ── Step 4.5: Build commentary objects ───────────────────────────
+    from reports.commentary import (
+        build_street_take, build_todays_map, build_what_changed,
+        format_book_summary, format_cross_asset_row,
+    )
+
+    sign_stable = (
+        p.get("sign_sensitivity") is not None
+        and p["sign_sensitivity"].regime_stable
+        and p["sign_sensitivity"].flip_stable
+    )
+    qa_obj = p.get("qa")
+    qa_publish_status = qa_obj.publish_status if qa_obj else "PASS"
+
+    level_map = build_todays_map(
+        regime=p["regime"],
+        level_classifications=p.get("classified_levels", []),
+        spot=p["spot"],
+        dominant_expiry=p.get("front_expiry"),
+        primary_flip=p.get("primary_flip"),
+        flip_status=p.get("flip_status", "undefined"),
+        confidence_label=p.get("confidence_label", "MODERATE"),
+        confidence_int=p.get("confidence_int", 50),
+    )
+
+    street_take = build_street_take(
+        regime=p["regime"],
+        composite_score=report.composite_score,
+        flip_status=p.get("flip_status", "undefined"),
+        primary_flip=p.get("primary_flip"),
+        spot=p["spot"],
+        dist_to_flip_pct=p.get("dist_pct", 0),
+        vix=vix_level,
+        vix_change_1d=vix_change_1d,
+        level_map=level_map,
+        confidence=p.get("confidence_label", "MODERATE"),
+        confidence_int=p.get("confidence_int", 50),
+        sign_stable=sign_stable,
+        qa_publish_status=qa_publish_status,
+    )
+
+    prior_primary = prior_instruments.get(p["key"], {})
+    what_changed = build_what_changed(
+        prior_state=prior_primary,
+        current_regime=p["regime"],
+        current_flip=p.get("primary_flip"),
+        current_flip_status=p.get("flip_status", "undefined"),
+        current_front_expiry=p.get("front_expiry"),
+        spot=p["spot"],
+        roll_status=p.get("roll_status"),
+    )
+
+    books_summary = format_book_summary(p.get("books", {}))
+
     # ── Step 5: Multi-instrument summary for template ─────────────────
     multi_data = []
     for inst_cfg in instruments:
@@ -333,19 +489,36 @@ def run_weekly_report(
                 "call_wall": None,
                 "put_wall": None,
                 "vix": vix_level,
+                "flip_status": "undefined",
+                "confidence_label": "VERY LOW",
+                "qa_publish_status": "BLOCK",
+                "futures_equivalent": None,
             })
         else:
+            # Find nearest magnet and slippery from classified levels
+            cl = res.get("classified_levels", [])
+            pins = sorted([lc for lc in cl if lc.classification == "pin"], key=lambda x: abs(x.dist_pct))
+            accs = sorted([lc for lc in cl if lc.classification == "accelerator"], key=lambda x: abs(x.dist_pct))
+            res_qa = res.get("qa")
             multi_data.append({
                 "key": key,
                 "label": inst_cfg.get("label", key),
                 "spot": round(res["spot"], 2),
                 "net_gex_b": round(res["net_gex_b"], 3),
                 "regime": res["regime"],
-                "flip_level": round(res["flip"], 2),
+                "flip_level": round(res["flip"], 2) if res["flip"] else 0,
                 "dist_pct": round(res["dist_pct"], 2),
                 "call_wall": res["call_wall_1"],
                 "put_wall": res["put_wall_1"],
                 "vix": vix_level,
+                "flip_status": res.get("flip_status", "undefined"),
+                "confidence_label": res.get("confidence_label", "MODERATE"),
+                "qa_publish_status": res_qa.publish_status if res_qa else "PASS",
+                "nearest_magnet": f"{pins[0].strike:,.0f}" if pins else "none",
+                "nearest_slippery": f"{accs[0].strike:,.0f}" if accs else "none",
+                "futures_equivalent": res.get("futures_equivalent"),
+                "primary_flip": res.get("primary_flip"),
+                "classified_levels": res.get("classified_levels", []),
             })
 
     # ── Step 6: Build template vars + render ─────────────────────────
@@ -362,6 +535,12 @@ def run_weekly_report(
             multi_data=multi_data,
             chart_paths=chart_paths,
             config=config,
+            street_take=street_take,
+            level_map=level_map,
+            what_changed=what_changed,
+            qa=qa_obj,
+            books_summary=books_summary,
+            primary_result=p,
         )
         # Inject VIX into tvars
         tvars["vix"] = vix_level
@@ -418,6 +597,25 @@ def run_weekly_report(
             send_report(pdf_for_email, subject, html_body, config)
         except Exception as e:
             logger.error(f"Email delivery failed: {e}")
+
+    # ── Step 9: Save prior state for next run ─────────────────────────
+    try:
+        from validation.qa import build_state_snapshot, save_prior_state
+        snapshot = {"instruments": {}}
+        for key, res in results.items():
+            if res is not None:
+                snapshot["instruments"][key] = build_state_snapshot(
+                    key=key,
+                    spot=res["spot"],
+                    regime=res["regime"],
+                    flip_level=res.get("primary_flip"),
+                    front_expiry=res.get("front_expiry"),
+                    net_gex=res.get("total_net_gex", 0),
+                )
+        save_prior_state(state_file, snapshot)
+        logger.info(f"Prior state saved: {state_file}")
+    except Exception as e:
+        logger.warning(f"Prior state save failed (non-fatal): {e}")
 
     logger.info("=" * 60)
     logger.info(f"Report ready: {report_path}")

@@ -61,6 +61,12 @@ def build_template_vars(
     multi_data: list,        # list of dicts, one per instrument
     chart_paths: dict,       # {chart_name: filepath}
     config: dict,
+    street_take=None,        # StreetTake from commentary.py
+    level_map=None,          # TodaysMap from commentary.py
+    what_changed=None,       # WhatChanged from commentary.py
+    qa=None,                 # QAReport from validation/qa.py
+    books_summary=None,      # list[dict] from format_book_summary
+    primary_result=None,     # full primary result dict
 ) -> dict:
     """
     Build template variable dict from all analytics outputs.
@@ -173,6 +179,79 @@ def build_template_vars(
     import datetime
     now = datetime.datetime.now()
 
+    # ── New: classified key levels rows from scenario engine ──────────
+    scenario_key_levels = []
+    if primary_result:
+        for lc in primary_result.get("classified_levels", []):
+            scenario_key_levels.append({
+                "strike": lc.strike,
+                "classification": lc.classification,
+                "classification_label": lc.interpretation,
+                "confidence": lc.confidence,
+                "dist_pct": lc.dist_pct,
+                "gex_at_strike_b": lc.gex_at_strike / 1e9,
+                "sign_sensitive": lc.sign_sensitive,
+                "wall_type": lc.wall_type,
+            })
+
+    # ── QA publish status + confidence ────────────────────────────────
+    qa_publish_status = qa.publish_status if qa else "PASS"
+    qa_confidence = qa.confidence if qa else 80
+    qa_confidence_label = qa.confidence_label if qa else "MODERATE"
+    qa_checks = []
+    if qa:
+        for chk in qa.checks:
+            qa_checks.append({
+                "name": chk.name,
+                "status": chk.status,
+                "message": chk.message,
+            })
+
+    # ── Flip status from primary result ───────────────────────────────
+    flip_status = primary_result.get("flip_status", "undefined") if primary_result else "undefined"
+    primary_flip = primary_result.get("primary_flip") if primary_result else None
+
+    # ── Street Take as template-ready dict ────────────────────────────
+    street_take_dict = None
+    if street_take:
+        street_take_dict = {
+            "headline": street_take.headline,
+            "tape_character": street_take.tape_character,
+            "key_level_note": street_take.key_level_note,
+            "what_to_watch": street_take.what_to_watch,
+            "confidence_note": street_take.confidence_note,
+            "bullets": street_take.as_bullets(),
+        }
+
+    # ── Today's Map as template-ready dict ────────────────────────────
+    level_map_dict = None
+    if level_map:
+        level_map_dict = {
+            "regime": level_map.regime,
+            "primary_magnet": level_map.primary_magnet,
+            "downside_slippery_zone": level_map.downside_slippery_zone,
+            "upside_supply_zone": level_map.upside_supply_zone,
+            "dominant_expiry": level_map.dominant_expiry,
+            "invalidation": level_map.invalidation,
+            "confidence": level_map.confidence,
+            "confidence_int": level_map.confidence_int,
+        }
+
+    # ── What Changed as template-ready dict ───────────────────────────
+    what_changed_dict = None
+    if what_changed:
+        what_changed_dict = {
+            "has_changes": what_changed.has_changes(),
+            "summary": what_changed.summary(),
+            "flip_changed": what_changed.flip_changed,
+            "regime_changed": what_changed.regime_changed,
+            "roll_detected": what_changed.roll_detected,
+            "flip_note": what_changed.flip_note,
+            "regime_note": what_changed.regime_note,
+            "roll_note": what_changed.roll_note,
+            "dominant_drivers": what_changed.dominant_drivers,
+        }
+
     tvars = {
         "title": cfg_report.get("title", "SPX GEX Weekly Report"),
         "author": cfg_report.get("author", "Macro Desk"),
@@ -182,6 +261,8 @@ def build_template_vars(
         "net_gex_b": round(total_net_gex / 1e9, 3),
         "flip_level": round(flip, 2),
         "dist_to_flip_pct": round(dist_to_flip_pct, 2),
+        "flip_status": flip_status,
+        "primary_flip": primary_flip,
         "call_wall_1": call_wall_1,
         "put_wall_1": put_wall_1,
         "max_pain": max_pain,
@@ -193,12 +274,22 @@ def build_template_vars(
         "signals": [s.to_dict() for s in report.signals],
         "playbook": playbook,
         "key_levels_rows": key_levels_rows,
+        "scenario_key_levels": scenario_key_levels,
         "opex_date": opex_data.get("expiry", ""),
         "opex_dte": opex_data.get("dte", 0),
         "opex_gex_expiring_m": round(opex_gex_expiring_m, 1),
         "opex_pct_of_book": round(opex_pct_of_book, 1),
         "multi_instrument": multi_data,
         "charts": {k: _encode_image(v) for k, v in chart_paths.items()},
+        # New: institutional-grade fields
+        "street_take": street_take_dict,
+        "level_map": level_map_dict,
+        "what_changed": what_changed_dict,
+        "qa_publish_status": qa_publish_status,
+        "qa_confidence": qa_confidence,
+        "qa_confidence_label": qa_confidence_label,
+        "qa_checks": qa_checks,
+        "books_summary": books_summary or [],
     }
     return tvars
 
