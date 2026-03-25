@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<style>
+  body { font-family: Arial, sans-serif; font-size: 14px; color: #333; background: #fff; max-width: 700px; margin: 0 auto; }
+  .header { background: #0e1117; color: #5c9eff; padding: 20px; border-bottom: 3px solid #5c9eff; }
+  .header h1 { margin: 0; font-size: 20px; }
+  .header .date { color: #aaa; font-size: 12px; margin-top: 4px; }
+  .section { padding: 16px 20px; }
+  .kv-table { width: 100%; border-collapse: collapse; }
+  .kv-table td { padding: 6px 10px; border-bottom: 1px solid #eee; }
+  .kv-table td:first-child { font-weight: bold; color: #555; width: 35%; }
+  .positive { color: #00a877; font-weight: bold; }
+  .negative { color: #d94040; font-weight: bold; }
+  .warning  { color: #cc9900; font-weight: bold; }
+  .badge { display: inline-block; padding: 4px 12px; border-radius: 3px; font-weight: bold; font-size: 13px; margin: 4px 4px 4px 0; }
+  .badge-regime { background: #e8f5e9; color: #00a877; }
+  .badge-short   { background: #fdecea; color: #d94040; }
+  .signal-list { list-style: none; padding: 0; }
+  .signal-list li { padding: 5px 0; border-bottom: 1px solid #f0f0f0; }
+  .signal-list li .s-name { font-weight: bold; }
+  .signal-list li .s-score { float: right; }
+  .playbook-box { background: #f9f9f9; border-left: 4px solid #5c9eff; padding: 12px 16px; margin: 10px 0; }
+  .playbook-box p { margin: 4px 0; }
+  .footer { background: #f5f5f5; padding: 12px 20px; font-size: 11px; color: #888; border-top: 1px solid #ddd; }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <h1>{{ title }}</h1>
+  <div class="date">Report Date: {{ report_date }} | Generated: {{ timestamp }}</div>
+</div>
+
+<div class="section">
+  <p>
+    <span class="badge {% if 'LONG' in regime %}badge-regime{% else %}badge-short{% endif %}">
+      {{ regime.replace("_", " ") }}
+    </span>
+    <span class="badge" style="background:#f0f4ff; color:#333;">
+      Composite: <strong>{{ "%.2f"|format(composite_score) }}</strong>
+    </span>
+    <span class="badge" style="background:{% if risk_level == 'LOW' %}#e8f5e9{% elif risk_level == 'MEDIUM' %}#fff8e1{% elif risk_level == 'HIGH' %}#fff3e0{% else %}#fdecea{% endif %}; color:#333;">
+      Risk: <strong>{{ risk_level }}</strong>
+    </span>
+  </p>
+</div>
+
+<div class="section" style="padding-top:0;">
+  <table class="kv-table">
+    <tr><td>SPX Spot</td><td>{{ "{:,.0f}".format(spot) }}</td></tr>
+    <tr><td>Net GEX</td>
+      <td class="{% if net_gex_b > 0 %}positive{% else %}negative{% endif %}">
+        ${{ "%+.2f"|format(net_gex_b) }}B
+      </td></tr>
+    <tr><td>Gamma Flip Level</td><td>{{ "{:,.0f}".format(flip_level) }}</td></tr>
+    <tr><td>Distance to Flip</td>
+      <td class="{% if dist_to_flip_pct > 1.5 %}positive{% elif dist_to_flip_pct < -1.5 %}negative{% else %}warning{% endif %}">
+        {{ "%+.1f"|format(dist_to_flip_pct) }}%
+      </td></tr>
+    <tr><td>Call Wall #1</td><td>{{ "{:,.0f}".format(call_wall_1) if call_wall_1 else "N/A" }}</td></tr>
+    <tr><td>Put Wall #1</td><td>{{ "{:,.0f}".format(put_wall_1) if put_wall_1 else "N/A" }}</td></tr>
+    <tr><td>Max Pain</td><td>{{ "{:,.0f}".format(max_pain) if max_pain else "N/A" }}</td></tr>
+    <tr><td>VIX</td><td>{{ "%.2f"|format(vix) if vix else "N/A" }}</td></tr>
+    <tr><td>OPEX</td><td>{{ opex_date }} ({{ opex_dte }} DTE)</td></tr>
+  </table>
+</div>
+
+<div class="section">
+  <strong>Summary:</strong>
+  <p style="margin-top:8px; color:#555; line-height:1.6;">{{ summary }}</p>
+</div>
+
+<div class="section">
+  <strong>Signal Scorecard:</strong>
+  <ul class="signal-list" style="margin-top:8px;">
+    {% for sig in signals %}
+    <li>
+      <span class="s-name">{{ sig.name }}</span>
+      <span class="s-score" style="color:{% if sig.score > 0.2 %}#00a877{% elif sig.score < -0.2 %}#d94040{% else %}#cc9900{% endif %};">
+        {{ "%+.2f"|format(sig.score) }} — {{ sig.magnitude }}
+      </span>
+      <br><small style="color:#777;">{{ sig.value }}</small>
+    </li>
+    {% endfor %}
+  </ul>
+</div>
+
+<div class="section">
+  <strong>Regime Playbook:</strong>
+  <div class="playbook-box">
+    <p><strong>Equities:</strong> {{ playbook.equities }}</p>
+    <p><strong>Volatility:</strong> {{ playbook.vol }}</p>
+    <p><strong>Options:</strong> {{ playbook.options }}</p>
+    <p><strong>Sizing:</strong> {{ playbook.sizing }}</p>
+  </div>
+</div>
+
+<div class="footer">
+  Full report attached as PDF. {{ timestamp }}<br>
+  This is an automated macro signal report. Not investment advice.
+</div>
+
+</body>
+</html>
