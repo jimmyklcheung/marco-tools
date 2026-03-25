@@ -1,8 +1,8 @@
 # ── Report Identity ─────────────────────────────────────────────────────────
 report:
-  title: "SPX Options Flow — Weekly Macro Briefing"
+  title: "SPX Options Flow — Daily Macro Briefing"
   author: "Macro Desk"
-  timezone: "America/New_York"   # Scheduler timezone
+  timezone: "Europe/London"      # Scheduler timezone
 
 # ── Instruments to analyse ──────────────────────────────────────────────────
 instruments:
@@ -45,10 +45,9 @@ macro:
 # ── Scheduler ───────────────────────────────────────────────────────────────
 schedule:
   enabled: true
-  day_of_week: "mon"            # Run every Monday
-  hour: 7                       # 7:00 AM
-  minute: 30                    # 7:30 AM
-  timezone: "America/New_York"
+  hour: 7                       # 7:00 AM London
+  minute: 0
+  timezone: "Europe/London"
 
 # ── Email delivery ───────────────────────────────────────────────────────────
 email:

@@ -49,23 +49,21 @@ def main():
         return
 
     sched_cfg = config.get("schedule", {})
-    tz = sched_cfg.get("timezone", "America/New_York")
-    day_of_week = sched_cfg.get("day_of_week", "mon")
+    tz = sched_cfg.get("timezone", "Europe/London")
     hour = sched_cfg.get("hour", 7)
-    minute = sched_cfg.get("minute", 30)
+    minute = sched_cfg.get("minute", 0)
 
     scheduler = BlockingScheduler(timezone=tz)
     scheduler.add_job(
         run_weekly_report,
         CronTrigger(
-            day_of_week=day_of_week,
             hour=hour,
             minute=minute,
             timezone=tz,
         ),
         args=[config_path],
-        id="weekly_gex_report",
-        name="SPX GEX Weekly Report",
+        id="daily_gex_report",
+        name="SPX GEX Daily Report",
         misfire_grace_time=3600,   # If missed, run up to 1h late
         coalesce=True,             # Don't stack missed runs
     )
@@ -73,7 +71,7 @@ def main():
     jobs = scheduler.get_jobs()
     if jobs:
         logging.info(f"Scheduler started. Next run: {jobs[0].next_run_time}")
-    logging.info(f"Schedule: every {day_of_week.upper()} at {hour:02d}:{minute:02d} {tz}")
+    logging.info(f"Schedule: daily at {hour:02d}:{minute:02d} {tz}")
     logging.info("Press Ctrl+C to stop.")
 
     try:
