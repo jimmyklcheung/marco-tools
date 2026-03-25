@@ -45,6 +45,7 @@ macro:
 # ── Scheduler ───────────────────────────────────────────────────────────────
 schedule:
   enabled: true
+  day_of_week: "mon-fri"        # Weekdays only
   hour: 7                       # 7:00 AM London
   minute: 0
   timezone: "Europe/London"

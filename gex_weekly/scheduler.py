@@ -50,6 +50,7 @@ def main():
 
     sched_cfg = config.get("schedule", {})
     tz = sched_cfg.get("timezone", "Europe/London")
+    day_of_week = sched_cfg.get("day_of_week", "mon-fri")
     hour = sched_cfg.get("hour", 7)
     minute = sched_cfg.get("minute", 0)
 
@@ -57,6 +58,7 @@ def main():
     scheduler.add_job(
         run_weekly_report,
         CronTrigger(
+            day_of_week=day_of_week,
             hour=hour,
             minute=minute,
             timezone=tz,
@@ -71,7 +73,7 @@ def main():
     jobs = scheduler.get_jobs()
     if jobs:
         logging.info(f"Scheduler started. Next run: {jobs[0].next_run_time}")
-    logging.info(f"Schedule: daily at {hour:02d}:{minute:02d} {tz}")
+    logging.info(f"Schedule: {day_of_week} at {hour:02d}:{minute:02d} {tz}")
     logging.info("Press Ctrl+C to stop.")
 
     try:
